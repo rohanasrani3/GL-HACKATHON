@@ -1,0 +1,11 @@
+{
+  "events": [
+    {
+      "title_contains": "AI",
+      "start": "2026-09-25T16:00",
+      "end": "2026-09-25T17:30",
+      "location_contains": "LG01"
+    }
+  ],
+  "captured_at": "2026-09-19T14:00:00+08:00"
+}
