@@ -30,6 +30,8 @@ class ModelConfig:
     api_key: str = ""
     temperature: float = 0.0
     timeout_s: int = 120
+    max_tokens: int = 300
+    think: bool = False
 
 
 @dataclass
@@ -40,8 +42,12 @@ class Config:
     matching: dict[str, Any] = field(default_factory=dict)
     run: dict[str, Any] = field(default_factory=dict)
     safety: dict[str, Any] = field(default_factory=dict)
+    agent: dict[str, Any] = field(default_factory=dict)
     ui: dict[str, Any] = field(default_factory=dict)
     source: Path | None = None
+
+    def get_agent(self, key: str, default: Any = None) -> Any:
+        return self.agent.get(key, default)
 
     def dir(self, key: str) -> Path:
         """Absolute path for one of the data directories, created on demand."""
@@ -70,6 +76,8 @@ def load_config(path: str | Path | None = None) -> Config:
         api_key=os.getenv("OSAGENT_API_KEY", m.get("api_key", "")),
         temperature=float(m.get("temperature", 0.0)),
         timeout_s=int(m.get("timeout_s", 120)),
+        max_tokens=int(m.get("max_tokens", 300)),
+        think=bool(m.get("think", False)),
     )
     return Config(
         model=model,
@@ -78,6 +86,7 @@ def load_config(path: str | Path | None = None) -> Config:
         matching=raw.get("matching", {}) or {},
         run=raw.get("run", {}) or {},
         safety=raw.get("safety", {}) or {},
+        agent=raw.get("agent", {}) or {},
         ui=raw.get("ui", {}) or {},
         source=cfg_path if cfg_path.exists() else None,
     )

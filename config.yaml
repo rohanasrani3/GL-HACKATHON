@@ -4,7 +4,9 @@ model:
   name: gemma4                # OSAGENT_MODEL
   base_url: http://localhost:11434
   temperature: 0.0
-  timeout_s: 120
+  think: false                # gemma4 is a reasoning model; see OllamaClient
+  max_tokens: 300             # hard cap on the reply; see OllamaClient for why
+  timeout_s: 300           # a 12B model on CPU can take minutes on a long prompt
 
 paths:
   recordings: recordings
@@ -28,6 +30,15 @@ run:
 safety:
   destructive_keywords: [send, submit, delete, pay, purchase, transfer, remove, publish]
   abort_key: esc
+  # A live agent may only start these. Anything else is refused, not confirmed.
+  allowed_apps: [notepad, calc, calculator, mspaint, paint, explorer, wordpad,
+                 chrome, msedge, firefox, code, excel, winword, notepad++]
+
+agent:
+  max_steps: 14               # hard cap on one live agent run
+  elements_in_prompt: 70      # how much of the UI tree the model sees per turn
+  settle_ms: 600              # pause after an action before re-perceiving
+  move_duration_s: 0.35       # visible cursor travel, so a human can follow along
 
 ui:
   port: 8765

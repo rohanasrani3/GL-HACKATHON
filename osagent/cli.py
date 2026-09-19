@@ -55,6 +55,35 @@ def doctor(elements: int = typer.Option(25, help="How many UI elements to print.
 
 
 @app.command()
+def agent(goal: str = typer.Argument(..., help="What you want done, in plain English."),
+          execute: bool = typer.Option(False, "--execute", help="Really drive the mouse and keyboard."),
+          steps: int = typer.Option(None, "--steps", help="Override the step cap."),
+          yes: bool = typer.Option(False, "--yes", help="Pre-approve destructive-looking actions."),
+          no_overlay: bool = typer.Option(False, "--no-overlay", help="Do not draw the target highlight."),
+          verbose: bool = typer.Option(False, "--verbose", "-v")) -> None:
+    """Live agent: the model reads the screen and drives it, one action at a time.
+
+    Dry run unless --execute. ESC aborts at any point.
+    """
+    from .agent.console import make_emitter
+    from .agent.loop import AgentLoop
+    from .ui.overlay import Overlay
+
+    overlay = None
+    if not no_overlay and execute:
+        overlay = Overlay()
+        overlay.start()
+    try:
+        loop = AgentLoop(goal, dry_run=not execute, emit=make_emitter(console, verbose),
+                         overlay=overlay, max_steps=steps, approve_destructive=yes)
+        result = loop.run()
+    finally:
+        if overlay is not None:
+            overlay.stop()
+    raise typer.Exit(0 if result.status == "done" else 1)
+
+
+@app.command()
 def record(name: str = typer.Argument(..., help="Recording name, saved to recordings/NAME.json")) -> None:
     """Record a demonstration. ESC stops."""
     console.print(NOT_YET.format(n=3) + f" (would write {CONFIG.dir('recordings') / (name + '.json')})")
@@ -90,11 +119,18 @@ def replay_last(dry_run: bool = typer.Option(True, "--dry-run/--execute")) -> No
 
 
 @app.command()
-def ui(port: int = typer.Option(None, help="Override the configured port.")) -> None:
-    """Serve the live trace dashboard."""
-    console.print(f"would serve on :{port or CONFIG.ui.get('port', 8765)}")
-    console.print(NOT_YET.format(n=7))
-    raise typer.Exit(1)
+def ui(port: int = typer.Option(None, help="Override the configured port."),
+       open_browser: bool = typer.Option(True, "--open/--no-open")) -> None:
+    """Serve the dashboard: type a prompt, watch the agent drive the screen."""
+    from .ui.server import serve
+
+    p = port or int(CONFIG.ui.get("port", 8765))
+    url = f"http://127.0.0.1:{p}"
+    console.print(f"osagent ui on [bold]{url}[/]   [dim]ctrl-c to stop, ESC aborts a run[/]")
+    if open_browser:
+        import threading, webbrowser
+        threading.Timer(1.0, lambda: webbrowser.open(url)).start()
+    serve(p)
 
 
 @app.command()

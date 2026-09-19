@@ -19,6 +19,7 @@ from ..config import CONFIG, ModelConfig
 @dataclass
 class LLMResponse:
     text: str
+    thinking: str = ""
     prompt_tokens: int = 0
     completion_tokens: int = 0
     model: str = ""
@@ -31,6 +32,8 @@ class LLMResponse:
     def json(self) -> Any:
         """Parse the response as JSON, tolerating a ```json fence."""
         t = self.text.strip()
+        if not t:
+            raise ValueError("the model returned an empty reply")
         if t.startswith("```"):
             t = t.split("\n", 1)[1].rsplit("```", 1)[0]
         try:
@@ -74,15 +77,26 @@ class OllamaClient(LLMClient):
             "messages": [{"role": "system", "content": system},
                          {"role": "user", "content": user}],
             "stream": False,
-            "options": {"temperature": self.cfg.temperature},
+            # Reasoning models put their reasoning in message.thinking and leave
+            # message.content empty until they are done. Combined with a token
+            # cap that means an empty reply every turn, so thinking is off by
+            # default: this loop wants one small JSON action, not an essay.
+            "think": self.cfg.think,
+            # num_predict is load-bearing: given a long element list, a small
+            # model will happily pad a one-line action out to thousands of
+            # tokens, which turns an 8 second call into nearly three minutes.
+            "options": {"temperature": self.cfg.temperature,
+                        "num_predict": self.cfg.max_tokens},
         }
         if json_mode:
             payload["format"] = "json"
         r = httpx.post(f"{self.cfg.base_url}/api/chat", json=payload, timeout=self.cfg.timeout_s)
         r.raise_for_status()
         d = r.json()
+        msg = d.get("message", {})
         return LLMResponse(
-            text=d.get("message", {}).get("content", ""),
+            text=msg.get("content", ""),
+            thinking=msg.get("thinking") or "",
             prompt_tokens=d.get("prompt_eval_count", 0),
             completion_tokens=d.get("eval_count", 0),
             model=d.get("model", self.cfg.name), raw=d,
@@ -106,6 +120,7 @@ class OpenAICompatClient(LLMClient):
             "messages": [{"role": "system", "content": system},
                          {"role": "user", "content": user}],
             "temperature": self.cfg.temperature,
+            "max_tokens": self.cfg.max_tokens,
         }
         if json_mode:
             payload["response_format"] = {"type": "json_object"}

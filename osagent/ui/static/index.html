@@ -1,1 +1,165 @@
-<!-- TODO(step 7): single-page dashboard, vanilla JS, no build step. -->
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>osagent</title>
+<style>
+  :root{
+    --bg:#0e1116; --panel:#161b22; --line:#262d36; --text:#e6edf3; --dim:#8b949e;
+    --accent:#2f81f7; --warn:#d29922; --bad:#f85149; --good:#3fb950; --mag:#bc8cff;
+    --mono:ui-monospace,"Cascadia Code",Consolas,monospace;
+  }
+  *{box-sizing:border-box}
+  body{margin:0;background:var(--bg);color:var(--text);
+       font:14px/1.5 -apple-system,"Segoe UI",system-ui,sans-serif}
+  header{display:flex;align-items:center;gap:14px;padding:12px 18px;
+         border-bottom:1px solid var(--line);background:var(--panel);flex-wrap:wrap}
+  h1{font-size:15px;margin:0;letter-spacing:.5px}
+  h1 span{color:var(--dim);font-weight:400}
+  .meta{margin-left:auto;color:var(--dim);font-size:12px;font-family:var(--mono)}
+  main{max-width:1000px;margin:0 auto;padding:18px}
+  .card{background:var(--panel);border:1px solid var(--line);border-radius:8px;padding:14px;margin-bottom:14px}
+  textarea{width:100%;min-height:68px;resize:vertical;background:#0d1117;color:var(--text);
+           border:1px solid var(--line);border-radius:6px;padding:10px;font:inherit}
+  textarea:focus{outline:none;border-color:var(--accent)}
+  .row{display:flex;align-items:center;gap:16px;margin-top:10px;flex-wrap:wrap}
+  label{display:flex;align-items:center;gap:6px;color:var(--dim);font-size:13px;cursor:pointer}
+  input[type=number]{width:62px;background:#0d1117;color:var(--text);
+                     border:1px solid var(--line);border-radius:4px;padding:3px 6px;font:inherit}
+  button{border:0;border-radius:6px;padding:8px 18px;font:600 14px inherit;cursor:pointer}
+  #go{background:var(--accent);color:#fff;margin-left:auto}
+  #go:disabled{opacity:.45;cursor:not-allowed}
+  #stop{background:var(--bad);color:#fff;display:none}
+  .banner{border-radius:6px;padding:8px 12px;font-size:13px;margin-top:10px;display:none}
+  .live{background:rgba(248,81,73,.12);border:1px solid var(--bad);color:#ffb4ae}
+  .dry{background:rgba(47,129,247,.1);border:1px solid var(--accent);color:#9ec5ff}
+  #trace{font-family:var(--mono);font-size:12.5px}
+  .ev{display:flex;gap:10px;padding:5px 0;border-bottom:1px solid #1c222b;align-items:flex-start}
+  .ev:last-child{border-bottom:0}
+  .tag{flex:0 0 74px;color:var(--dim);text-transform:uppercase;font-size:10.5px;letter-spacing:.6px;padding-top:2px}
+  .body{flex:1;white-space:pre-wrap;word-break:break-word}
+  .step{color:var(--dim);border-top:1px solid var(--line);margin-top:8px;padding-top:8px}
+  .think .body{color:var(--mag)}
+  .action .body{color:var(--warn);font-weight:600}
+  .error .body,.reject .body{color:var(--bad)}
+  .perceive .body{color:var(--dim)}
+  .finish .body{font-weight:700}
+  .ok{color:var(--good)} .bad{color:var(--bad)} .warn{color:var(--warn)}
+  .empty{color:var(--dim);font-family:var(--mono);font-size:12.5px}
+  footer{color:var(--dim);font-size:12px;text-align:center;padding:0 18px 26px}
+  kbd{background:#0d1117;border:1px solid var(--line);border-bottom-width:2px;
+      border-radius:4px;padding:1px 5px;font-family:var(--mono);font-size:11px}
+</style>
+</head>
+<body>
+<header>
+  <h1>osagent <span>· live agent</span></h1>
+  <div class="meta" id="meta">connecting…</div>
+</header>
+
+<main>
+  <div class="card">
+    <textarea id="goal" placeholder="Describe the task, e.g. Open Notepad and type a shopping list"></textarea>
+    <div class="row">
+      <label><input type="checkbox" id="execute"> Execute for real</label>
+      <label><input type="checkbox" id="overlay" checked> Highlight target</label>
+      <label><input type="checkbox" id="approve"> Allow destructive steps</label>
+      <label>Max steps <input type="number" id="steps" min="1" max="40" value="14"></label>
+      <button id="stop">Stop</button>
+      <button id="go">Run</button>
+    </div>
+    <div class="banner live" id="liveWarn">
+      <b>Live mode.</b> This moves your real mouse and keyboard. Press <kbd>Esc</kbd> at any time to abort.
+    </div>
+    <div class="banner dry" id="dryNote">
+      <b>Dry run.</b> The model reads the screen and decides, but nothing is clicked or typed.
+    </div>
+  </div>
+
+  <div class="card">
+    <div id="trace"><div class="empty">No run yet.</div></div>
+  </div>
+</main>
+<footer>Local only · the model sees your screen's accessibility tree, never a screenshot upload.</footer>
+
+<script>
+const $ = id => document.getElementById(id);
+let es = null;
+
+function sync(){
+  const live = $('execute').checked;
+  $('liveWarn').style.display = live ? 'block' : 'none';
+  $('dryNote').style.display  = live ? 'none'  : 'block';
+}
+$('execute').addEventListener('change', sync); sync();
+
+fetch('/api/status').then(r => r.json()).then(s => {
+  $('meta').textContent = `${s.model} · ${s.host_os}`;
+  $('steps').value = s.max_steps;
+}).catch(() => $('meta').textContent = 'status unavailable');
+
+function clearTrace(){ $('trace').innerHTML = ''; }
+
+function add(tag, text, cls){
+  const t = $('trace');
+  const row = document.createElement('div');
+  row.className = 'ev ' + (cls || tag);
+  const a = document.createElement('div'); a.className = 'tag'; a.textContent = tag;
+  const b = document.createElement('div'); b.className = 'body'; b.textContent = text;
+  row.append(a, b); t.append(row);
+  t.lastElementChild.scrollIntoView({block:'nearest'});
+  return b;
+}
+
+function running(on){
+  $('go').disabled = on;
+  $('go').textContent = on ? 'Running…' : 'Run';
+  $('stop').style.display = on ? 'inline-block' : 'none';
+}
+
+$('go').onclick = async () => {
+  const goal = $('goal').value.trim();
+  if (!goal) { $('goal').focus(); return; }
+  clearTrace(); running(true);
+  let r, data;
+  try {
+    r = await fetch('/api/run', {method:'POST', headers:{'Content-Type':'application/json'},
+      body: JSON.stringify({goal, execute:$('execute').checked, overlay:$('overlay').checked,
+                            approve:$('approve').checked, steps:Number($('steps').value)})});
+    data = await r.json();
+  } catch (e) { add('error', String(e), 'error'); running(false); return; }
+  if (!r.ok) { add('error', data.detail || 'failed to start', 'error'); running(false); return; }
+  listen(data.run_id);
+};
+
+$('stop').onclick = () => fetch('/api/abort', {method:'POST'});
+
+function listen(id){
+  if (es) es.close();
+  es = new EventSource(`/api/stream/${id}`);
+  const on = (name, fn) => es.addEventListener(name, e => fn(JSON.parse(e.data)));
+
+  on('start',    d => add('goal', d.goal + (d.dry_run ? '   [dry run]' : '   [LIVE]')));
+  on('step',     d => add('step', `step ${d.n} of ${d.max}`, 'step'));
+  on('perceive', d => add('screen', `${d.app} — ${d.window}  (${d.count} elements)`, 'perceive'));
+  on('think',    d => d.thought && add('thinks', d.thought, 'think'));
+  on('action',   d => add('does', d.describe, 'action'));
+  on('reject',   d => add('retry', d.error, 'reject'));
+  on('error',    d => add('error', d.error, 'error'));
+  on('finish',   d => {
+    const cls = d.status === 'done' ? 'ok' : (d.status === 'aborted' ? 'warn' : 'bad');
+    const el = add('result', `${d.status.toUpperCase()}  ${d.reason || ''}`, 'finish');
+    el.classList.add(cls);
+    add('cost', `${d.steps} steps · ${d.llm_calls} llm calls · ${d.llm_tokens} tokens · ${d.elapsed_s}s`);
+  });
+  on('closed',   () => { running(false); es.close(); es = null; });
+  es.onerror = () => { running(false); if (es) { es.close(); es = null; } };
+}
+
+$('goal').addEventListener('keydown', e => {
+  if ((e.metaKey || e.ctrlKey) && e.key === 'Enter') $('go').click();
+});
+</script>
+</body>
+</html>

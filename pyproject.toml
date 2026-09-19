@@ -14,7 +14,7 @@ dependencies = [
     "pillow>=10.3",
     "pyautogui>=0.9.54",
     "pynput>=1.7",
-    "fastapi>=0.111",
+    "starlette>=0.37",   # not FastAPI: pydantic's native module is blocked by Windows Application Control here
     "uvicorn>=0.30",
     # --- platform specific ---
     "uiautomation>=2.0.18 ; sys_platform == 'win32'",

@@ -1,10 +1,14 @@
 """Windows backend: UIAutomation through the `uiautomation` package."""
 from __future__ import annotations
 
+import os
+
 from .base import Perceiver, PerceptionError
 from .element import UIElement
 from .screen import ensure_dpi_aware
 from .win_util import CLICKABLE, INTERACTABLE, _bbox, _process_name, _role, _value
+
+OWN_PID = os.getpid()
 
 
 class WindowsPerceiver(Perceiver):
@@ -21,7 +25,23 @@ class WindowsPerceiver(Perceiver):
 
     # -- window level ------------------------------------------------------
     def _foreground(self):
+        """The frontmost window that is not one of ours.
+
+        osagent draws its own highlight overlay and can own a console, so
+        without this an agent run can end up reading its own UI and going blind
+        to the application it is supposed to be driving.
+        """
         win = self.auto.GetForegroundControl()
+        if win is not None:
+            top = win.GetTopLevelControl() or win
+            if getattr(top, "ProcessId", 0) != OWN_PID:
+                return win
+        for candidate in self.auto.GetRootControl().GetChildren():
+            if getattr(candidate, "ProcessId", 0) == OWN_PID:
+                continue
+            box = _bbox(candidate)
+            if box[2] > 80 and box[3] > 60 and (candidate.Name or "").strip():
+                return candidate
         if win is None:
             raise PerceptionError("no foreground window")
         return win
