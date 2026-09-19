@@ -38,7 +38,7 @@ class Settings:
     #   confidence >= AUTO_ADD_THRESHOLD      -> decision "auto_add" (app adds it, then notifies with Undo)
     #   ASK_THRESHOLD <= confidence < AUTO    -> decision "ask"      (app asks before adding)
     #   confidence < ASK_THRESHOLD            -> dropped, never sent to the app
-    auto_add_threshold: float = float(os.getenv("AUTO_ADD_THRESHOLD", "0.8"))
+    auto_add_threshold: float = float(os.getenv("AUTO_ADD_THRESHOLD", "0.6"))
     ask_threshold: float = float(os.getenv("ASK_THRESHOLD", "0.5"))
     # Longest image side sent to the model, in pixels.
     max_image_side: int = int(os.getenv("MAX_IMAGE_SIDE", "1280"))

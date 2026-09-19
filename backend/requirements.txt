@@ -10,3 +10,4 @@ anthropic>=0.60
 pytest>=8.3
 zxing-cpp>=2.2
 qrcode>=7.4  # test fixtures only
+beautifulsoup4>=4.12

@@ -41,7 +41,8 @@ def ev(conf, title):
 def test_analyze_contract(monkeypatch):
     monkeypatch.setattr(main, "client", FakeClient(Extraction(
         genre="poster", sensitive=False, actionable=True, skipped_reason=None,
-        events=[ev(0.95, "Clear"), ev(0.6, "Unclear"), ev(0.2, "Noise")])))
+        # 0.55 sits between ask_threshold (0.5) and auto_add_threshold (0.6), so it must confirm.
+        events=[ev(0.95, "Clear"), ev(0.55, "Unclear"), ev(0.2, "Noise")])))
     with TestClient(main.app) as c:
         r = c.post("/analyze", files={"file": ("s.png", png(), "image/png")},
                    data={"captured_at": datetime.now(HK).isoformat(), "timezone": "Asia/Hong_Kong"})

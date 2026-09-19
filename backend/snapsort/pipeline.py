@@ -1,4 +1,5 @@
 """Screenshot → proposals. Preprocess image, call the model, resolve dates, score, filter."""
+import asyncio
 import base64
 import hashlib
 import io
@@ -6,19 +7,25 @@ import time as clock
 from datetime import datetime, timedelta
 from pathlib import Path
 from typing import Optional
+from urllib.parse import urlparse
 from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
 
 from PIL import Image
 
 from .config import settings
 from .datetime_resolve import DEFAULT_DURATION, parse_hhmm, resolve_date, split_range
-from .forms import looks_like_form, qr_urls, resolve_google_form
+from .formdetect import detect_form, form_likelihood, page_meta
+from .forms import qr_urls
+from .links import UnsafeUrlError, normalise
+from .links import fetch as fetch_page
 from .models import ModelClient
 from .schema import (
     AnalyzeResponse,
     CalendarPayload,
     Extraction,
+    FormPayload,
     FormProposal,
+    LinkContext,
     Location,
     Proposal,
     RawEvent,
@@ -55,15 +62,21 @@ def build_user_prompt(captured_at: datetime, locale: str) -> str:
 
 
 # Signals that the event is unclear even when the model sounds sure: always ask first.
-UNCLEAR_NOTES = ("parser_model_disagree", "model_guess_only", "no_time_all_day", "range_ignored")
 MAX_RANGE_DAYS = 31  # longer "events" are usually misreads (or semesters nobody wants as one block)
 
 
 def decide(confidence: float, notes: list[str]) -> str:
-    """Policy gate (CLAUDE.md §2.5): add automatically only when confident *and* nothing is unclear."""
-    if confidence >= settings.auto_add_threshold and not any(u in n for n in notes for u in UNCLEAR_NOTES):
-        return "auto_add"
-    return "ask"
+    """Policy gate (CLAUDE.md §2.5): confidence alone decides whether to add or ask.
+
+    Signals like `parser_model_disagree` or `no_time_all_day` used to force "ask" even at high
+    confidence. They no longer do — they already cost confidence through the penalties in
+    to_proposal(), so counting them twice meant confident events still interrupted the user.
+    The notes are still emitted for debugging and evals.
+
+    Safe because a calendar add is reversible and ships with Undo (CLAUDE.md §2.5, D8 covers only
+    irreversible actions). Form proposals are unaffected: those are always "ask".
+    """
+    return "auto_add" if confidence >= settings.auto_add_threshold else "ask"
 
 
 def resolve_end_date(ev: RawEvent, range_end_text: Optional[str], start_date, captured_at: datetime, locale: str, notes: list[str]):
@@ -166,35 +179,114 @@ def to_proposal(ev: RawEvent, genre: str, captured_at: datetime, tz: ZoneInfo, l
     )
 
 
-def form_url_from_image(image_bytes: bytes) -> Optional[str]:
-    """A form link taken from a QR code, which is exact, unlike OCR of a 44-character form id."""
+MAX_LINKS = 4  # bounds latency and how much of a screenshot's link list we will chase
+
+
+def qr_links(image_bytes: bytes) -> list[str]:
+    """URLs decoded from QR codes. Exact, unlike OCR of a long random id."""
     try:
         with Image.open(io.BytesIO(image_bytes)) as im:
-            for url in qr_urls(im.convert("RGB")):
-                if looks_like_form(url):
-                    return url
+            return qr_urls(im.convert("RGB"))
     except Exception:  # noqa: BLE001 - QR decoding is best-effort, never fatal
-        return None
-    return None
+        return []
 
 
-async def to_form_proposal(url: str, source: str) -> Optional[FormProposal]:
-    """Resolve a reported link into a proposal. The fields come from the real form, not the model.
+def candidate_links(image_bytes: bytes, extraction: Extraction) -> list[tuple[str, str]]:
+    """(url, source) worth visiting, best first, deduplicated.
+
+    QR codes come first because they carry the exact bytes; the link the model singled out as a
+    form comes next; everything else it saw follows.
+    """
+    ordered: list[tuple[str, str]] = [(u, "qr") for u in qr_links(image_bytes)]
+    if extraction.form_url:
+        ordered.append((extraction.form_url, "ocr"))
+    ordered += [(u, "ocr") for u in extraction.links_seen]
+
+    seen: set[str] = set()
+    out: list[tuple[str, str]] = []
+    for url, source in ordered:
+        try:
+            # Syntactic only. The address check that blocks private hosts lives in links.fetch,
+            # so it runs once, on the real connection, including every redirect hop.
+            normalised = normalise(url)
+        except UnsafeUrlError:
+            continue  # not a usable http(s) URL
+        if normalised in seen:
+            continue
+        seen.add(normalised)
+        out.append((normalised, source))
+        if len(out) >= MAX_LINKS:
+            break
+    return out
+
+
+def to_form_proposal(payload: FormPayload, evidence: str, source: str, likelihood: float) -> FormProposal:
+    """Wrap a detected form.
 
     Always `decision="ask"`: opening a pre-filled form is one step from submitting it, so it never
     happens without the user (CLAUDE.md §4.6, D8).
     """
-    payload = await resolve_google_form(url)
-    if payload is None:
-        return None
     known = sum(1 for f in payload.fields if f.profile_key)
+    sensitive = sum(1 for f in payload.fields if f.sensitive)
+    notes = [
+        f"source:{source}",
+        f"provider:{payload.provider}",
+        f"prefill:{payload.prefill_style}",
+        f"fields:{len(payload.fields)}",
+        f"profile_known:{known}",
+    ]
+    if sensitive:
+        notes.append(f"sensitive_fields_skipped:{sensitive}")
     return FormProposal(
         id=hashlib.sha1(payload.form_url.encode()).hexdigest()[:12],
         payload=payload,
-        confidence=1.0,  # read from the live form, so the field ids are facts, not predictions
-        evidence=url,
-        notes=[f"source:{source}", f"fields:{len(payload.fields)}", f"profile_known:{known}"],
+        # Fields read off the live page are facts; the only doubt is whether a page with a <form>
+        # on it is really the thing the user wants to fill.
+        confidence=round(min(1.0, 0.6 + likelihood * 0.4), 2),
+        evidence=evidence,
+        notes=notes,
     )
+
+
+async def explore_links(image_bytes: bytes, extraction: Extraction) -> tuple[list[FormProposal], list[LinkContext], Optional[str]]:
+    """Visit the links in the screenshot to find out what it is actually about.
+
+    Everything fetched is untrusted data (CLAUDE.md §4.1): it decides what we *report*, never what
+    Snapsort does. links.fetch refuses private addresses, so a link cannot reach internal hosts.
+    """
+    candidates = candidate_links(image_bytes, extraction)
+    if not candidates:
+        return [], [], None
+
+    pages = await asyncio.gather(*(fetch_page(url) for url, _ in candidates))
+
+    forms: list[FormProposal] = []
+    contexts: list[LinkContext] = []
+    unreachable = False
+    for (url, source), page in zip(candidates, pages):
+        if page is None:
+            unreachable = True
+            contexts.append(LinkContext(url=url, domain=urlparse(url).netloc, source=source))
+            continue
+        payload = detect_form(page)
+        title, description = page_meta(page.html)
+        contexts.append(
+            LinkContext(
+                url=page.url,
+                domain=urlparse(page.url).netloc,
+                title=title,
+                description=(description or "")[:300] or None,
+                is_form=payload is not None,
+                source=source,
+            )
+        )
+        if payload and len(forms) < 2:
+            likelihood, reasons = form_likelihood(page.url, page)
+            payload.reasons = payload.reasons + [r for r in reasons if r not in payload.reasons]
+            forms.append(to_form_proposal(payload, evidence=url, source=source, likelihood=likelihood))
+
+    error = "form_link_unreadable" if (unreachable and not forms) else None
+    return forms, contexts, error
 
 
 async def analyze(
@@ -221,20 +313,13 @@ async def analyze(
 
     # A screenshot can hold a form and no event at all, so this is independent of `actionable`.
     # Sensitive screenshots are still dropped outright (CLAUDE.md §4.5).
+    # Follow the links to learn what the screenshot is really about. Independent of `actionable`
+    # (a page can be a form with no event) and skipped entirely for sensitive screenshots (§4.5).
     forms: list[FormProposal] = []
+    links: list[LinkContext] = []
     form_error: Optional[str] = None
-    # A QR code beats the model's reading of the same link: the id is 44 random characters and
-    # one misread character 404s the fetch.
-    qr_url = form_url_from_image(image_bytes)
-    candidate = qr_url or extraction.form_url
-    if not extraction.sensitive and looks_like_form(candidate):
-        form = await to_form_proposal(candidate, source="qr" if qr_url else "ocr")
-        if form:
-            forms.append(form)
-        else:
-            # Seen but unresolvable, almost always a misread URL. Say so instead of returning
-            # nothing and looking like the feature simply didn't fire.
-            form_error = "form_link_unreadable"
+    if not extraction.sensitive:
+        forms, links, form_error = await explore_links(image_bytes, extraction)
 
     proposals: list[Proposal] = []
     seen_ids: set[str] = set()
@@ -253,6 +338,7 @@ async def analyze(
     return AnalyzeResponse(
         proposals=proposals,
         forms=forms,
+        links=links,
         genre=extraction.genre,
         skipped_reason=None if (proposals or forms) else (skipped or form_error or "not_actionable"),
         model=client.name,
