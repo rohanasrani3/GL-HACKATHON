@@ -1,5 +1,4 @@
 import AppIntents
-import UniformTypeIdentifiers
 
 // iOS can't run code when a screenshot is taken. These intents are the closest substitute:
 //   • Shortcut "Take Screenshot → Snapsort a screenshot", bound to Back Tap or the Action Button,
@@ -13,7 +12,7 @@ struct SnapsortScreenshotIntent: AppIntent {
     static let description = IntentDescription("Reads a screenshot and adds any event it finds to your calendar.")
     static let openAppWhenRun = false
 
-    @Parameter(title: "Screenshot", supportedTypeIdentifiers: [UTType.image.identifier])
+    @Parameter(title: "Screenshot", supportedTypeIdentifiers: ["public.image"])
     var screenshot: IntentFile
 
     @MainActor
