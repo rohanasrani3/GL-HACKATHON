@@ -98,3 +98,49 @@ def test_missing_key_fails_at_request_not_startup():
 def test_invalid_json_reported():
     with pytest.raises(ModelAPIError, match="invalid JSON"):
         run(client_with(lambda r: httpx.Response(200, json={"choices": [{"message": {"content": "sorry, no"}}]})))
+
+
+# ---------- recovering from malformed JSON ----------
+
+def _content(text):
+    return httpx.Response(200, json={"choices": [{"message": {"content": text}}], "model": "primary"})
+
+
+def test_trailing_prose_after_the_object_is_tolerated():
+    body = json.dumps(GOOD) + "\n\nHope that helps!"
+    ex = run(client_with(lambda r: _content(body)))
+    assert ex.events[0].title == "Global Entrepreneurship Programme"
+
+
+def test_trailing_commas_are_tolerated():
+    body = json.dumps(GOOD).replace('"skipped_reason": null}', '"skipped_reason": null,}')
+    ex = run(client_with(lambda r: _content(body)))
+    assert ex.actionable is True
+
+
+def test_unparseable_primary_falls_back_to_the_next_model():
+    """A stray quote mid-string kills the object. Re-ask a stricter model rather than fail."""
+    seen = []
+
+    def handler(req: httpx.Request):
+        payload = json.loads(req.content)
+        seen.append(payload.get("model") or payload.get("models"))
+        if len(seen) == 1:
+            # what actually happens: an unescaped quote ends the string early
+            return _content('{"genre": "poster", "evidence": "he said "hi" there", ')
+        return _content(json.dumps(GOOD))
+
+    ex = run(client_with(handler))
+    assert ex.events[0].location == "HKU Campus"
+    assert seen[0] == ["google/gemma-4-26b-a4b-it", "google/gemini-2.5-flash-lite"]
+    assert seen[1] == "google/gemini-2.5-flash-lite"  # retry is pinned to the fallback
+
+
+def test_gives_up_when_every_model_returns_junk():
+    with pytest.raises(ModelAPIError, match="invalid JSON"):
+        run(client_with(lambda r: _content('{"broken": "yes" "no"}')))
+
+
+def test_no_fallback_configured_still_reports_clearly():
+    with pytest.raises(ModelAPIError, match="invalid JSON"):
+        run(client_with(lambda r: _content("not json at all"), fallbacks=()))
