@@ -27,7 +27,7 @@ struct PendingShot: Codable, Equatable {
 }
 
 struct PersistedState: Codable, Equatable {
-    var serverURL = "http://localhost:8000"
+    var serverURL = "https://gl-hackathon.onrender.com" // same default as Android
     var apiToken = ""
     var onboarded = false
     var scanningEnabled = false

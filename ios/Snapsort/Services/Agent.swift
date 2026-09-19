@@ -321,7 +321,9 @@ final class Agent: ObservableObject {
 
     func testConnection() async -> String {
         do {
-            let health = try await api().health()
+            let client = try api()
+            let health = try await client.health()
+            try await client.checkToken()
             store.update { $0.lastError = nil }
             let warning = health.apiVersion == 1 ? "" : " (backend version mismatch)"
             return "Connected: \(health.model)\(warning)"

@@ -43,7 +43,7 @@ Mock mode cycles through 3 responses on successive `/analyze` calls, whatever im
 
 With the real model (`MODEL_PROVIDER=openrouter`, hosted), one screenshot typically takes **~3–10 s**, longer if OpenRouter falls back to another provider or the network is slow. **All networking must tolerate a 240 s timeout**, and the UI must show progress.
 
-**Base URL:** user-configurable in Settings, e.g. `http://192.168.1.23:8000` (laptop on the same Wi-Fi or hotspot) or `http://laptop.tailnet.ts.net:8000` (Tailscale). Default: `http://localhost:8000` (works in the iOS Simulator on the same Mac).
+**Base URL:** user-configurable in Settings, e.g. `http://192.168.1.23:8000` (laptop on the same Wi-Fi or hotspot) or `http://laptop.tailnet.ts.net:8000` (Tailscale). Default: `https://gl-hackathon.onrender.com` (the deployed team backend, same as Android). The deployed backend needs the team API token (`X-Api-Token`); Test connection calls `GET /auth/check` to verify it.
 
 ---
 
@@ -408,7 +408,7 @@ One JSON file, `Application Support/snapsort-state.json` (`Store.swift`):
 
 | Field | Purpose |
 |---|---|
-| `serverURL`, `apiToken` | Settings. Default `http://localhost:8000` |
+| `serverURL`, `apiToken` | Settings. Default `https://gl-hackathon.onrender.com` |
 | `scanningEnabled`, `onboarded` | Watcher on/off; first-launch flow done |
 | `scanCursor` | Screenshot cursor (§4), set to now on first start |
 | `pending` | Retry queue: PHAsset id, original capture time, attempts (max 3) |

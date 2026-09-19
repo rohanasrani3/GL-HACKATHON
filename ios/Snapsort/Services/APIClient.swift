@@ -9,7 +9,7 @@ enum APIError: LocalizedError {
         switch self {
         case .badURL(let url): return "Bad server URL: \(url)"
         case .noResponse: return "No response from server"
-        case .http(401, _): return "HTTP 401: check the API token"
+        case .http(401, _): return "Server reachable, but the API token is wrong"
         case .http(let code, let body): return "HTTP \(code): \(body.prefix(200))"
         }
     }
@@ -54,6 +54,17 @@ struct APIClient {
         let (data, response) = try await Self.session.data(for: request("health", timeout: 10))
         try check(data, response)
         return try JSONDecoder.api.decode(HealthResponse.self, from: data)
+    }
+
+    /// GET /auth/check: /health answers without a token, so this is what proves the token works.
+    func checkToken() async throws {
+        let (data, response) = try await Self.session.data(for: request("auth/check", timeout: 30))
+        guard let http = response as? HTTPURLResponse else { throw APIError.noResponse }
+        switch http.statusCode {
+        case 200..<300, 404: return // 404: older backend without /auth/check
+        case 401: throw APIError.http(401, "")
+        default: throw APIError.http(http.statusCode, String(data: data, encoding: .utf8) ?? "")
+        }
     }
 
     /// POST /analyze. `jpeg` must already be downscaled and re-encoded (ImagePrep), so no EXIF/GPS leaves the phone.

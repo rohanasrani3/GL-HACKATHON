@@ -23,7 +23,7 @@ struct SettingsView: View {
                 }
 
                 Text("Settings").font(RelayFont.headline).foregroundStyle(Relay.textPrimary)
-                Text("The phone talks to the Snapsort backend. In the Simulator http://localhost:8000 works; on an iPhone use your laptop's IP on the same Wi-Fi/hotspot, or its Tailscale name.")
+                Text("The team backend runs at https://gl-hackathon.onrender.com (it can take a minute to wake up). For a local backend use your laptop's IP, or http://localhost:8000 in the Simulator.")
                     .font(RelayFont.bodyMedium).foregroundStyle(Relay.textMuted)
 
                 RelayField(label: "Laptop server URL", text: $serverURL, keyboard: .URL)

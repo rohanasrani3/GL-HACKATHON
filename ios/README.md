@@ -11,7 +11,7 @@ SwiftUI port of the Android app (`/android`): same Relay Home UI and the same be
 brew install xcodegen
 cd ios && xcodegen generate && open Snapsort.xcodeproj
 ```
-- **Simulator:** start the backend on the same Mac (`MODEL_PROVIDER=mock` is enough to try the UI). The default server URL `http://localhost:8000` works as is.
+- **Simulator:** start the backend on the same Mac (`MODEL_PROVIDER=mock` is enough to try the UI). Then set the server URL in Settings to `http://localhost:8000`.
 - **iPhone:** in Xcode, select the Snapsort target, then *Signing & Capabilities*, and choose your team. A free Apple ID works, but the app expires after 7 days. Run on the phone, then in the app go to *••• → Settings* and set the server URL to your laptop's IP or Tailscale name.
 
 ## Layout
