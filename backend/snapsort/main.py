@@ -15,7 +15,7 @@ from pydantic import BaseModel
 
 from .config import settings
 from .models import get_client
-from .pipeline import analyze
+from .pipeline import InvalidInputError, analyze
 from .schema import AnalyzeResponse
 
 log = logging.getLogger("snapsort")
@@ -80,7 +80,7 @@ async def feedback(fb: Feedback, x_api_token: Optional[str] = Header(None)):
 @app.post("/analyze", response_model=AnalyzeResponse)
 async def analyze_endpoint(
     file: UploadFile = File(...),
-    captured_at: Optional[str] = Form(None, description="ISO 8601 with offset; defaults to now"),
+    captured_at: Optional[str] = Form(None, description="Required ISO 8601 timestamp with UTC offset"),
     timezone: Optional[str] = Form(None, description="IANA tz, e.g. Asia/Hong_Kong"),
     locale: str = Form("en-HK"),
     x_api_token: Optional[str] = Header(None),
@@ -93,15 +93,19 @@ async def analyze_endpoint(
     if len(data) > 15 * 1024 * 1024:
         raise HTTPException(status_code=413, detail="image too large")
 
-    cap = None
-    if captured_at:
-        try:
-            cap = datetime.fromisoformat(captured_at)
-        except ValueError:
-            raise HTTPException(status_code=400, detail="captured_at must be ISO 8601")
+    if not captured_at:
+        raise HTTPException(status_code=400, detail="captured_at is required")
+    try:
+        cap = datetime.fromisoformat(captured_at)
+    except ValueError:
+        raise HTTPException(status_code=400, detail="captured_at must be ISO 8601")
+    if cap.utcoffset() is None:
+        raise HTTPException(status_code=400, detail="captured_at must include a UTC offset")
 
     try:
         result = await analyze(client, data, cap, timezone, locale)
+    except InvalidInputError as e:
+        raise HTTPException(status_code=400, detail=str(e)) from e
     except Exception as e:  # noqa: BLE001 - surface model/network failures to the app as 502
         log.exception("analyze failed")
         raise HTTPException(status_code=502, detail=f"model error: {e}")

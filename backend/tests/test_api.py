@@ -58,7 +58,8 @@ def test_sensitive_is_skipped(monkeypatch):
     monkeypatch.setattr(main, "client", FakeClient(Extraction(
         genre="other", sensitive=True, actionable=True, skipped_reason=None, events=[ev(0.99, "OTP")])))
     with TestClient(main.app) as c:
-        r = c.post("/analyze", files={"file": ("s.png", png(), "image/png")})
+        r = c.post("/analyze", files={"file": ("s.png", png(), "image/png")},
+                   data={"captured_at": "2026-09-19T14:00:00+08:00"})
     assert r.json()["proposals"] == [] and r.json()["skipped_reason"] == "sensitive_content"
 
 
@@ -80,3 +81,51 @@ def test_bad_inputs(monkeypatch):
         assert c.post("/analyze", files={"file": ("s.png", b"", "image/png")}).status_code == 400
         assert c.post("/analyze", files={"file": ("s.png", png(), "image/png")},
                       data={"captured_at": "yesterday"}).status_code == 400
+
+
+def test_invalid_timezone_returns_400(monkeypatch):
+    monkeypatch.setattr(main, "client", FakeClient(Extraction(
+        genre="other", sensitive=False, actionable=False, events=[], skipped_reason="not_actionable")))
+    with TestClient(main.app) as c:
+        r = c.post("/analyze", files={"file": ("s.png", png(), "image/png")},
+                   data={"captured_at": datetime.now(HK).isoformat(), "timezone": "Invalid/Timezone"})
+    assert r.status_code == 400, r.text
+
+
+def test_non_image_upload_returns_400(monkeypatch):
+    monkeypatch.setattr(main, "client", FakeClient(Extraction(
+        genre="other", sensitive=False, actionable=False, events=[], skipped_reason="not_actionable")))
+    with TestClient(main.app) as c:
+        r = c.post("/analyze", files={"file": ("s.png", b"not an image", "image/png")},
+                   data={"captured_at": datetime.now(HK).isoformat(), "timezone": "Asia/Hong_Kong"})
+    assert r.status_code == 400, r.text
+
+
+def test_missing_captured_at_returns_400(monkeypatch):
+    monkeypatch.setattr(main, "client", FakeClient(Extraction(
+        genre="other", sensitive=False, actionable=False, events=[], skipped_reason="not_actionable")))
+    with TestClient(main.app) as c:
+        r = c.post("/analyze", files={"file": ("s.png", png(), "image/png")},
+                   data={"timezone": "Asia/Hong_Kong"})
+    assert r.status_code == 400, r.text
+
+
+def test_captured_at_without_offset_returns_400(monkeypatch):
+    monkeypatch.setattr(main, "client", FakeClient(Extraction(
+        genre="other", sensitive=False, actionable=False, events=[], skipped_reason="not_actionable")))
+    with TestClient(main.app) as c:
+        r = c.post("/analyze", files={"file": ("s.png", png(), "image/png")},
+                   data={"captured_at": "2026-09-19T14:00:00", "timezone": "Asia/Hong_Kong"})
+    assert r.status_code == 400, r.text
+
+
+def test_duplicate_events_preserve_distinct_proposals_in_order(monkeypatch):
+    event = ev(0.95, "One talk")
+    monkeypatch.setattr(main, "client", FakeClient(Extraction(
+        genre="poster", sensitive=False, actionable=True, skipped_reason=None,
+        events=[event, ev(0.95, "Another talk"), event])))
+    with TestClient(main.app) as c:
+        r = c.post("/analyze", files={"file": ("s.png", png(), "image/png")},
+                   data={"captured_at": datetime.now(HK).isoformat(), "timezone": "Asia/Hong_Kong"})
+    assert r.status_code == 200, r.text
+    assert [p["payload"]["title"] for p in r.json()["proposals"]] == ["One talk", "Another talk"]
