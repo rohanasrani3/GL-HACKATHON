@@ -1,0 +1,33 @@
+# osagent configuration. Environment variables always win over this file.
+model:
+  provider: ollama            # ollama | openai_compat
+  name: gemma4                # OSAGENT_MODEL
+  base_url: http://localhost:11434
+  temperature: 0.0
+  timeout_s: 120
+
+paths:
+  recordings: recordings
+  workflows: workflows
+  runs: runs
+
+perception:
+  max_elements: 400           # hard cap on a single snapshot, keeps prompts small
+  max_depth: 18               # a11y tree walk depth
+  ignore_offscreen: true
+
+matching:
+  fuzzy_threshold: 82         # rapidfuzz score needed for a name match
+  accept_threshold: 0.55      # overall score needed to act on a candidate
+
+run:
+  step_timeout_ms: 8000
+  settle_ms: 250              # pause after each action before the next snapshot
+  screenshot_every_step: true
+
+safety:
+  destructive_keywords: [send, submit, delete, pay, purchase, transfer, remove, publish]
+  abort_key: esc
+
+ui:
+  port: 8765
