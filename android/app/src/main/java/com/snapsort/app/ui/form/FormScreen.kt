@@ -65,29 +65,54 @@ fun FormScreen(
                     Text("Opens at", style = MaterialTheme.typography.labelMedium, color = MaterialTheme.colorScheme.onSurfaceVariant)
                     Text(form.domain, style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.SemiBold)
                     Text(
-                        "Snapsort fills these answers in and opens the form. It never presses Submit — that stays with you.",
+                        if (form.canPrefill) {
+                            "Snapsort fills these answers in and opens the form. It never presses Submit — that stays with you."
+                        } else {
+                            "This page can't take answers in its link, so Snapsort opens it as-is. " +
+                                "Your saved details are below to copy in."
+                        },
                         style = MaterialTheme.typography.bodySmall,
                         color = MaterialTheme.colorScheme.onSurfaceVariant,
                     )
+                    // Never a black box: say why this was treated as a form at all.
+                    if (form.reasons.isNotEmpty()) {
+                        Text(
+                            "Why Snapsort thinks this is a form: " + form.reasons.joinToString("; "),
+                            style = MaterialTheme.typography.labelSmall,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        )
+                    }
                 }
             }
 
             Spacer(Modifier.height(4.dp))
-            Text("Answers", style = MaterialTheme.typography.titleMedium)
+            if (form.fields.isEmpty()) {
+                Text("Questions", style = MaterialTheme.typography.titleMedium)
+                Text(
+                    "This form builds its questions in the page, so they can't be read in advance. " +
+                        "Snapsort will open it for you to fill in.",
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                )
+            } else {
+                Text("Answers", style = MaterialTheme.typography.titleMedium)
+            }
 
             form.fields.forEach { field ->
                 val value = values[field.entryId].orEmpty()
                 val hint = when {
+                    field.sensitive -> "Snapsort never fills this in"
                     field.entryId in autofilled -> "From your profile · ${Profile.label(field.profileKey ?: "")}"
                     field.profileKey != null -> "Saved to your profile for next time"
                     else -> "Not stored — specific to this form"
                 }
                 Column(verticalArrangement = Arrangement.spacedBy(2.dp)) {
                     OutlinedTextField(
-                        value = value,
-                        onValueChange = { onValueChange(field.entryId, it) },
+                        value = if (field.sensitive) "" else value,
+                        onValueChange = { if (!field.sensitive) onValueChange(field.entryId, it) },
                         label = { Text(field.question + if (field.required) " *" else "") },
                         singleLine = field.type != "paragraph",
+                        enabled = !field.sensitive,
                         modifier = Modifier.fillMaxWidth(),
                     )
                     Text(
@@ -110,7 +135,7 @@ fun FormScreen(
             Spacer(Modifier.height(8.dp))
 
             Button(onClick = onOpen, modifier = Modifier.fillMaxWidth()) {
-                Text("Open pre-filled form")
+                Text(if (form.canPrefill) "Open pre-filled form" else "Open form")
             }
             Text(
                 if (missingRequired > 0) {

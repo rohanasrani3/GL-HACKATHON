@@ -183,7 +183,7 @@ class MainActivity : ComponentActivity() {
         val seeded = mutableMapOf<String, String>()
         val fromProfile = mutableSetOf<String>()
         form.fields.forEach { field ->
-            val stored = field.profileKey?.let { profile[it] }
+            val stored = if (field.sensitive) null else field.profileKey?.let { profile[it] }
             if (!stored.isNullOrBlank()) {
                 seeded[field.entryId] = stored
                 fromProfile += field.entryId
@@ -205,13 +205,16 @@ class MainActivity : ComponentActivity() {
         val values = formValues.value
         val profile = Profile(this)
         val learned = form.fields.mapNotNull { field ->
+            // A sensitive field has no profile key by construction, but be explicit: passwords,
+            // card numbers and ID numbers are never stored (CLAUDE.md §4.6).
+            if (field.sensitive) return@mapNotNull null
             val key = field.profileKey ?: return@mapNotNull null
             val value = values[field.entryId].orEmpty()
             if (value.isBlank()) null else key to value
         }.toMap()
         if (learned.isNotEmpty()) profile.putAll(learned)
 
-        val url = buildPrefillUrl(form.formUrl, values)
+        val url = buildPrefillUrl(form, values)
         store.log("📝 Opened pre-filled form: ${form.domain} (${values.count { it.value.isNotBlank() }} answers)")
         store.recordActivity(
             ActivityRecord(

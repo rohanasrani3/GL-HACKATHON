@@ -47,11 +47,19 @@ class Extraction(BaseModel):
     events: list[RawEvent] = Field(description="One event per distinct date or date range in dates_seen that is an event, deadline or appointment")
     # v3 (form autofill): the model only *reports* the link. Deterministic code fetches the form
     # and reads its real field ids, and the device fills the values (CLAUDE.md D3, §2.8, §4.3).
+    links_seen: list[str] = Field(
+        default_factory=list,
+        description=(
+            "Every web link visible anywhere in the screenshot, copied exactly as written: registration "
+            "links, 'more info' URLs, links in a browser address bar, short links (bit.ly, forms.gle), "
+            "and the caption under a QR code. Empty list if there are none."
+        ),
+    )
     form_url: Optional[str] = Field(
         default=None,
         description=(
-            "If the screenshot shows a registration / signup form link (a Google Forms URL, a forms.gle "
-            "short link, or such a link in a browser address bar), copy it exactly as written. null if none."
+            "Of the links in links_seen, the one that most looks like a form to fill in (registration, "
+            "signup, RSVP, application, survey). null if none of them do."
         ),
     )
     skipped_reason: Optional[str] = Field(description="If actionable is false, a few words on why, else null")
@@ -96,19 +104,44 @@ PROFILE_KEYS = (
 
 
 class FormField(BaseModel):
-    entry_id: str  # Google Forms prefill parameter, e.g. "entry.1046611833"
+    # The prefill query parameter: "entry.1046611833" on Google Forms, otherwise the input's name.
+    entry_id: str
     question: str
     profile_key: Optional[str] = None  # which profile field answers this; null = ask the user
     required: bool = False
     type: str = "short_text"
     options: list[str] = []
+    # Passwords, card numbers and government IDs. CLAUDE.md §4.6 forbids ever filling these, so
+    # they are reported (so the user knows the form asks) but never prefilled.
+    sensitive: bool = False
+
+
+# How the destination accepts pre-filled answers:
+#   google_forms - ?usp=pp_url&entry.N=value, exact and reliable
+#   query        - ?<input name>=value; works on many GET forms and hosted builders
+#   none         - no URL prefill; Snapsort opens it and shows the values to copy
+PrefillStyle = Literal["google_forms", "query", "none"]
 
 
 class FormPayload(BaseModel):
-    form_url: str  # public /viewform URL; the device appends the prefill query itself
+    form_url: str  # the device appends the prefill query itself
     title: Optional[str] = None
     domain: str  # shown to the user before anything opens (CLAUDE.md §4.7)
     fields: list[FormField]
+    prefill_style: PrefillStyle = "none"
+    provider: str = "generic"  # google_forms | typeform | tally | ... | generic
+    # Why we think this is a form, shown in the UI so the guess is never a black box.
+    reasons: list[str] = []
+
+
+class LinkContext(BaseModel):
+    """What a link in the screenshot actually points at, so the app can explain it."""
+    url: str
+    domain: str
+    title: Optional[str] = None
+    description: Optional[str] = None
+    is_form: bool = False
+    source: str = "ocr"  # qr | ocr
 
 
 class FormProposal(BaseModel):
@@ -126,6 +159,8 @@ class AnalyzeResponse(BaseModel):
     proposals: list[Proposal]
     # Additive on purpose: existing clients that only read `proposals` keep working unchanged.
     forms: list[FormProposal] = []
+    # What the links in the screenshot turned out to be — context beyond the date and title.
+    links: list[LinkContext] = []
     genre: Optional[str] = None
     skipped_reason: Optional[str] = None
     model: str

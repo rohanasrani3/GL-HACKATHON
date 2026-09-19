@@ -1,12 +1,14 @@
 """Form-fill skill: link detection, form parsing, profile mapping and the safety rules."""
 import io
 import json
+from urllib.parse import urlparse
 
 import pytest
 from PIL import Image
 
 from snapsort import pipeline
 from snapsort.forms import _extract_load_data, looks_like_form, parse_form_html, profile_key_for
+from snapsort.links import FetchedPage
 from snapsort.schema import Extraction, FormPayload
 
 
@@ -103,6 +105,8 @@ def _png() -> bytes:
 
 
 class _Stub:
+    """Model stub: reports whatever links the test says were visible in the screenshot."""
+
     name = "stub"
 
     def __init__(self, **kw):
@@ -111,103 +115,102 @@ class _Stub:
     async def extract(self, *_a):
         return Extraction(
             genre="poster", sensitive=self.kw.get("sensitive", False), actionable=False,
-            events=[], skipped_reason=None, form_url=self.kw.get("form_url"),
+            events=[], skipped_reason=None,
+            form_url=self.kw.get("form_url"),
+            links_seen=self.kw.get("links_seen", []),
         )
 
     async def warmup(self):
         return None
 
 
-def _payload() -> FormPayload:
-    return FormPayload(
-        form_url="https://docs.google.com/forms/d/e/X/viewform",
-        title="Signup", domain="docs.google.com", fields=[],
-    )
+def _page(url: str, html: str = "<html><title>Signup</title></html>") -> FetchedPage:
+    return FetchedPage(url=url, html=html, content_type="text/html")
+
+
+def _payload(url="https://docs.google.com/forms/d/e/X/viewform") -> FormPayload:
+    return FormPayload(form_url=url, title="Signup", domain=urlparse(url).netloc, fields=[])
+
+
+def _patch(monkeypatch, *, pages: dict, form_for=None):
+    """Fake the network: `pages` maps url -> FetchedPage (missing url = unreachable)."""
+    async def fake_fetch(url, timeout=12.0):
+        return pages.get(url)
+
+    monkeypatch.setattr(pipeline, "fetch_page", fake_fetch)
+    monkeypatch.setattr(pipeline, "detect_form", form_for or (lambda page: None))
 
 
 @pytest.mark.anyio
 async def test_form_proposal_is_always_ask_never_auto(monkeypatch):
     """CLAUDE.md §4.6 / D8: a pre-filled form is one step from submitting, so it always confirms."""
-    async def fake(url, timeout=15.0):
-        return _payload()
-
-    monkeypatch.setattr(pipeline, "resolve_google_form", fake)
-    result = await pipeline.analyze(_Stub(form_url="https://forms.gle/abc"), _png())
+    url = "https://forms.gle/abc"
+    _patch(monkeypatch, pages={url: _page(url)}, form_for=lambda page: _payload(page.url))
+    result = await pipeline.analyze(_Stub(form_url=url), _png())
     assert len(result.forms) == 1
     assert result.forms[0].decision == "ask"
     assert result.forms[0].action == "form.prefill"
 
 
 @pytest.mark.anyio
-async def test_sensitive_screenshot_never_resolves_a_form(monkeypatch):
-    """CLAUDE.md §4.5: a banking/OTP screenshot is dropped before any network call."""
-    async def boom(url, timeout=15.0):
-        raise AssertionError("must not fetch a form from a sensitive screenshot")
+async def test_sensitive_screenshot_never_touches_the_network(monkeypatch):
+    """CLAUDE.md §4.5: a banking/OTP screenshot is dropped before any link is followed."""
+    async def boom(url, timeout=12.0):
+        raise AssertionError("must not fetch anything from a sensitive screenshot")
 
-    monkeypatch.setattr(pipeline, "resolve_google_form", boom)
+    monkeypatch.setattr(pipeline, "fetch_page", boom)
     result = await pipeline.analyze(_Stub(form_url="https://forms.gle/abc", sensitive=True), _png())
     assert result.forms == []
+    assert result.links == []
     assert result.skipped_reason == "sensitive_content"
 
 
 @pytest.mark.anyio
-async def test_non_form_url_is_not_fetched(monkeypatch):
-    async def boom(url, timeout=15.0):
-        raise AssertionError("must not fetch a non-form link")
-
-    monkeypatch.setattr(pipeline, "resolve_google_form", boom)
-    result = await pipeline.analyze(_Stub(form_url="https://example.com/register"), _png())
+async def test_ordinary_page_gives_context_but_no_form(monkeypatch):
+    """Links are followed for context now; only actual forms become proposals."""
+    url = "https://example.com/news"
+    html = "<html><title>Club news</title><meta name='description' content='What we did'></html>"
+    _patch(monkeypatch, pages={url: _page(url, html)})
+    result = await pipeline.analyze(_Stub(links_seen=[url]), _png())
     assert result.forms == []
-
-
-# ---------- QR codes (CLAUDE.md §4.7) ----------
-
-def test_qr_code_decodes_exactly():
-    """The reason QR beats OCR: a 44-character form id survives verbatim."""
-    qrcode = pytest.importorskip("qrcode")
-    pytest.importorskip("zxingcpp")
-    from snapsort.forms import qr_urls
-
-    url = "https://docs.google.com/forms/d/1fLuq0w3qhlz0ix1MLPzWyAVcWwVVBP79RWaESEX8d64/viewform"
-    qr = qrcode.QRCode(box_size=8, border=2)
-    qr.add_data(url)
-    qr.make(fit=True)
-    canvas = Image.new("RGB", (900, 900), "white")
-    canvas.paste(qr.make_image(fill_color="black", back_color="white").convert("RGB"), (100, 100))
-    assert qr_urls(canvas) == [url]
-
-
-def test_image_without_a_qr_yields_nothing():
-    pytest.importorskip("zxingcpp")
-    from snapsort.forms import qr_urls
-
-    assert qr_urls(Image.new("RGB", (300, 300), "white")) == []
+    assert [c.title for c in result.links] == ["Club news"]
+    assert result.links[0].is_form is False
+    assert result.links[0].description == "What we did"
 
 
 @pytest.mark.anyio
 async def test_qr_link_beats_a_misread_url(monkeypatch):
-    """A model OCRing the id off a poster gets characters wrong; the QR is authoritative."""
+    """A model OCRing an id off a poster gets characters wrong; the QR is authoritative."""
     right = "https://docs.google.com/forms/d/RIGHT/viewform"
     wrong = "https://docs.google.com/forms/d/WR0NG/viewform"
-    seen = {}
-
-    async def fake(url, timeout=15.0):
-        seen["url"] = url
-        return _payload()
-
-    monkeypatch.setattr(pipeline, "qr_urls", lambda _im: [right])
-    monkeypatch.setattr(pipeline, "resolve_google_form", fake)
+    monkeypatch.setattr(pipeline, "qr_links", lambda _b: [right])
+    _patch(monkeypatch, pages={right: _page(right), wrong: _page(wrong)},
+           form_for=lambda page: _payload(page.url))
     result = await pipeline.analyze(_Stub(form_url=wrong), _png())
-    assert seen["url"] == right
+    assert result.forms[0].payload.form_url == right
     assert "source:qr" in result.forms[0].notes
 
 
 @pytest.mark.anyio
-async def test_unreadable_link_is_reported_rather_than_silent(monkeypatch):
-    async def unresolvable(url, timeout=15.0):
-        return None
-
-    monkeypatch.setattr(pipeline, "resolve_google_form", unresolvable)
+async def test_unreachable_link_is_reported_rather_than_silent(monkeypatch):
+    _patch(monkeypatch, pages={})  # nothing resolves
     result = await pipeline.analyze(_Stub(form_url="https://forms.gle/abc"), _png())
     assert result.forms == []
     assert result.skipped_reason == "form_link_unreadable"
+
+
+@pytest.mark.anyio
+async def test_links_are_capped(monkeypatch):
+    """Chasing every link on a busy poster would blow up latency."""
+    urls = [f"https://example.com/{i}" for i in range(12)]
+    _patch(monkeypatch, pages={u: _page(u) for u in urls})
+    result = await pipeline.analyze(_Stub(links_seen=urls), _png())
+    assert len(result.links) == pipeline.MAX_LINKS
+
+
+@pytest.mark.anyio
+async def test_duplicate_links_are_visited_once(monkeypatch):
+    url = "https://example.com/register"
+    _patch(monkeypatch, pages={url: _page(url)})
+    result = await pipeline.analyze(_Stub(form_url=url, links_seen=[url, url]), _png())
+    assert len(result.links) == 1

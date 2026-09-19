@@ -28,17 +28,21 @@ def test_clear_event_is_auto_added():
 
 
 def test_low_confidence_asks():
-    assert to_proposal(event(confidence=0.6), "chat", NOW, HK, "en-HK").decision == "ask"
+    assert to_proposal(event(confidence=0.4), "chat", NOW, HK, "en-HK").decision == "ask"
 
 
-def test_missing_time_asks_even_if_confident():
+def test_missing_time_becomes_all_day_and_costs_confidence():
+    """The uncertainty is priced into the confidence, not charged again as a forced ask."""
     p = to_proposal(event(start_time=None, end_time=None), "poster", NOW, HK, "en-HK")
-    assert p.payload.all_day and p.decision == "ask"
+    assert p.payload.all_day
+    assert "no_time_all_day" in p.notes
+    assert p.confidence < 0.95  # penalised relative to the same event with a time
 
 
-def test_date_disagreement_asks():
+def test_date_disagreement_costs_confidence():
     p = to_proposal(event(date_guess=(NEXT_WEEK + timedelta(days=1)).isoformat()), "poster", NOW, HK, "en-HK")
-    assert p.decision == "ask"
+    assert any("disagree" in n for n in p.notes)
+    assert p.confidence < 0.95
 
 
 def test_past_event_dropped():
@@ -53,9 +57,17 @@ def test_same_event_same_id():
 
 
 def test_decide_thresholds():
-    assert decide(0.8, []) == "auto_add"
-    assert decide(0.79, []) == "ask"
-    assert decide(0.99, ["model_guess_only"]) == "ask"
+    """Confidence alone decides: at or above the threshold it adds, below it asks."""
+    assert decide(0.6, []) == "auto_add"
+    assert decide(0.59, []) == "ask"
+    assert decide(1.0, []) == "auto_add"
+
+
+def test_unclear_notes_no_longer_force_a_confirmation():
+    """Those signals already cost confidence in to_proposal(); charging for them twice meant
+    confident events still interrupted the user."""
+    assert decide(0.9, ["model_guess_only", "parser_model_disagree", "no_time_all_day"]) == "auto_add"
+    assert decide(0.4, ["model_guess_only"]) == "ask"
 
 
 # ---- multi-day ----
@@ -87,10 +99,13 @@ def test_ongoing_multi_day_event_kept():
     assert p is not None and p.payload.start == start.isoformat()
 
 
-def test_absurd_range_ignored_and_asks():
+def test_absurd_range_is_ignored():
+    """A 120-day "event" is a misread: keep the single day and note why."""
     end = NEXT_WEEK + timedelta(days=120)
     p = to_proposal(event(end_date_text=end.strftime("%d %B %Y"), end_date_guess=end.isoformat()), "poster", NOW, HK, "en-HK")
-    assert not p.payload.all_day and p.decision == "ask"
+    assert not p.payload.all_day
+    assert "range_ignored" in p.notes
+    assert p.confidence < 0.95
 
 
 def test_end_time_in_end_date_field_stays_single_day():

@@ -3,7 +3,7 @@ package com.snapsort.app
 import android.net.Uri
 import org.json.JSONObject
 
-/** One question on the form, with the prefill parameter the backend read off the live form. */
+/** One question on the form, with the prefill parameter the backend read off the live page. */
 data class FormField(
     val entryId: String,
     val question: String,
@@ -11,7 +11,16 @@ data class FormField(
     val required: Boolean,
     val type: String,
     val options: List<String>,
+    /** Passwords, card numbers, government IDs. CLAUDE.md §4.6: never pre-filled, ever. */
+    val sensitive: Boolean = false,
 )
+
+/** How the destination accepts pre-filled answers. */
+object PrefillStyle {
+    const val GOOGLE_FORMS = "google_forms" // ?usp=pp_url&entry.N=value
+    const val QUERY = "query"               // ?<input name>=value
+    const val NONE = "none"                 // no URL prefill; open it and show the values
+}
 
 /**
  * A registration form Snapsort found in a screenshot.
@@ -26,7 +35,13 @@ data class FormPrefill(
     val domain: String,
     val fields: List<FormField>,
     val json: String,
+    val prefillStyle: String = PrefillStyle.NONE,
+    val provider: String = "generic",
+    /** Why Snapsort thinks this is a form, so the guess is never a black box. */
+    val reasons: List<String> = emptyList(),
 ) {
+    val canPrefill get() = prefillStyle != PrefillStyle.NONE && fields.any { !it.sensitive }
+
     val notificationId get() = id.hashCode()
 
     companion object {
@@ -44,8 +59,10 @@ data class FormPrefill(
                     required = f.optBoolean("required", false),
                     type = f.optString("type", "short_text"),
                     options = (0 until (opts?.length() ?: 0)).map { opts!!.getString(it) },
+                    sensitive = f.optBoolean("sensitive", false),
                 )
             }
+            val reasonsArr = pl.optJSONArray("reasons")
             return FormPrefill(
                 id = p.getString("id"),
                 formUrl = pl.getString("form_url"),
@@ -53,21 +70,36 @@ data class FormPrefill(
                 domain = pl.getString("domain"),
                 fields = fields,
                 json = raw,
+                prefillStyle = pl.optString("prefill_style", PrefillStyle.NONE),
+                provider = pl.optString("provider", "generic"),
+                reasons = (0 until (reasonsArr?.length() ?: 0)).map { reasonsArr!!.getString(it) },
             )
         }
     }
 }
 
 /**
- * Google Forms prefill link: `?usp=pp_url&entry.<id>=<value>`.
+ * Build the link that opens the form with answers already typed in.
  *
- * Opening this shows the form with the answers typed in, still waiting for the user to press
- * Submit themselves. Blank values are dropped so an empty profile field doesn't clear anything.
+ * - Google Forms: `?usp=pp_url&entry.<id>=<value>`, exact and documented.
+ * - Any other GET form or hosted builder: `?<input name>=<value>`.
+ * - Otherwise the URL is returned untouched and the user copies the values in.
+ *
+ * Whatever the style, the form only ever *opens*. Snapsort never submits it (CLAUDE.md §4.6),
+ * and sensitive fields are never put in the URL at all.
  */
-fun buildPrefillUrl(formUrl: String, valuesByEntryId: Map<String, String>): String {
-    val builder = Uri.parse(formUrl).buildUpon().clearQuery().appendQueryParameter("usp", "pp_url")
+fun buildPrefillUrl(form: FormPrefill, valuesByEntryId: Map<String, String>): String {
+    if (form.prefillStyle == PrefillStyle.NONE) return form.formUrl
+
+    val sensitiveIds = form.fields.filter { it.sensitive }.map { it.entryId }.toSet()
+    val builder = Uri.parse(form.formUrl).buildUpon().clearQuery()
+    if (form.prefillStyle == PrefillStyle.GOOGLE_FORMS) {
+        builder.appendQueryParameter("usp", "pp_url")
+    }
     valuesByEntryId.forEach { (entryId, value) ->
-        if (value.isNotBlank()) builder.appendQueryParameter(entryId, value)
+        if (value.isNotBlank() && entryId !in sensitiveIds) {
+            builder.appendQueryParameter(entryId, value)
+        }
     }
     return builder.build().toString()
 }
