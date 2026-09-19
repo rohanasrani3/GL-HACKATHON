@@ -43,7 +43,8 @@ extension HomeUiState {
             id: r.id,
             title: r.title,
             status: r.status,
-            destination: (r.status == .executed || r.status == .needsAttention) ? calendarDestination : nil,
+            destination: r.form.map { ToolDestination(label: $0.destinationLabel, symbol: "≡") }
+                ?? ((r.status == .executed || r.status == .needsAttention) ? calendarDestination : nil),
             summary: r.summary,
             eventTime: r.eventTime,
             activityTimestamp: relativeLabel(now.timeIntervalSince(r.timestamp)),

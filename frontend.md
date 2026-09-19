@@ -113,6 +113,7 @@ Field rules:
 - `location.name`, `location.online_url` and `description` can each be `null`.
 - `notes` and `evidence` are for debugging. Show `evidence` in the Activity detail view.
 - Ignore unknown fields: the backend may add more.
+- `forms` and `links` (v3) are **additive and may be absent** on older backends. See §16.
 
 **Errors:**
 
@@ -483,6 +484,9 @@ CI ([`.github/workflows/ios.yml`](.github/workflows/ios.yml)) checks the ones ma
 - [ ] With the backend stopped: Home shows RETRYING, and the screenshot is processed after the backend restarts and the app is reopened.
 - [ ] Back Tap shortcut (Take Screenshot → Snapsort a screenshot) adds an event without opening the app.
 - [ ] With the real model, the processing row counts seconds and nothing times out before 240 s.
+- [ ] 🤖 Form found → NEEDS_INPUT with a "Google Forms" chip; Open → `?usp=pp_url&entry.…` URL with profile answers, sensitive field excluded, activity EXECUTED.
+- [ ] 🤖 Form review screen renders (domain card, profile hints, disabled sensitive field).
+- [ ] A real poster with a Google Forms QR code → notification → review → Safari opens the form with answers filled in.
 
 ---
 
@@ -499,3 +503,34 @@ CI ([`.github/workflows/ios.yml`](.github/workflows/ios.yml)) checks the ones ma
 | No calendar permission | Falls back to ask + calendar editor | Same (`EKEventEditViewController`) |
 | Retry queue / dedup | Pending screenshots, `CUSTOM_APP_URI` marker | Pending PHAssets, `snapsort://proposal/<id>` event URL |
 | Feedback | `POST /feedback`, `platform: android` | `POST /feedback`, `platform: ios` |
+| Registration forms (v3) | "Registration form found" notification → FormScreen → browser | Same: FORM notification → `FormReviewView` → Safari |
+| Profile for forms | Learned from forms (`Profile.kt`) | Learned from forms, **plus** an editor in Settings |
+| Watcher restart after reboot / battery exemption | `BootReceiver`, battery-optimisation prompt | Not needed (no foreground service on iOS) |
+
+## 16. Registration forms (v3)
+
+When a screenshot has a registration link or QR code, `/analyze` returns `forms` (shape in `backend/snapsort/schema.py`):
+
+```json
+"forms": [{
+  "id": "…", "action": "form.prefill", "decision": "ask", "confidence": 0.9, "evidence": "forms.gle/…",
+  "payload": {
+    "form_url": "https://docs.google.com/forms/d/e/…/viewform", "title": "…", "domain": "docs.google.com",
+    "prefill_style": "google_forms",            // google_forms | query | none
+    "provider": "google_forms", "reasons": ["…"],
+    "fields": [{ "entry_id": "entry.123", "question": "Full name", "profile_key": "full_name",
+                 "required": true, "type": "short_text", "options": [], "sensitive": false }]
+  }
+}],
+"links": [{ "url": "…", "domain": "…", "title": "…", "is_form": true, "source": "qr" }]
+```
+
+Flow (both apps):
+1. Record a **NEEDS_INPUT** activity (kind *form*, destination "Google Forms" or the domain) and post **"Registration form found"**: "N questions · M need you · domain". Tapping it, or **Review** on Home, opens the review screen, **never the form**.
+2. **Review screen:** shows the destination domain first (CLAUDE.md §4.7) and why it's considered a form. Answers are pre-filled from the local **profile** (`full_name, email, phone, age, location, organisation, student_id, dietary, website`). Unknown answers start blank. **Sensitive fields** (passwords, card numbers, IDs) are shown disabled and never filled.
+3. **Open pre-filled form:** save any new profile answers, build the URL, and open it in the browser. The activity becomes EXECUTED "Pre-filled — submit it yourself".
+   - `google_forms`: `?usp=pp_url&entry.N=value`
+   - `query`: `?name=value`
+   - `none`: open the URL untouched and show the values to copy
+   - Sensitive fields never go in the URL.
+4. **Snapsort never submits.** The user presses Submit (CLAUDE.md §4.6). Profile values never leave the phone (§2.8, §4.3).

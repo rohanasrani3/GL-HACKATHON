@@ -4,6 +4,7 @@ import UserNotifications
 /// Actionable notifications (port of Notifier.kt + ActionReceiver.kt).
 ///   ADDED: "✅ Added to your calendar: …"  [Undo] [Open]
 ///   ASK:   "Add “…” to calendar?"         [Add] [Edit] [Dismiss]
+///   FORM:  "Registration form found"      [Review] (opens the review screen, never the form)
 /// The identifier is the proposal id, so ADDED replaces ASK for the same event after Add.
 final class NotificationService: NSObject, UNUserNotificationCenterDelegate {
     static let shared = NotificationService()
@@ -12,6 +13,7 @@ final class NotificationService: NSObject, UNUserNotificationCenterDelegate {
         static let added = "ADDED"
         static let ask = "ASK"
         static let couldNotAdd = "COULD_NOT_ADD"
+        static let form = "FORM"
     }
 
     enum Action {
@@ -20,6 +22,7 @@ final class NotificationService: NSObject, UNUserNotificationCenterDelegate {
         static let add = "ADD"
         static let edit = "EDIT"
         static let dismiss = "DISMISS"
+        static let review = "REVIEW"
     }
 
     private var center: UNUserNotificationCenter { .current() }
@@ -44,7 +47,14 @@ final class NotificationService: NSObject, UNUserNotificationCenterDelegate {
             options: [.customDismissAction] // clearing the notification counts as Dismiss
         )
         let couldNotAdd = UNNotificationCategory(identifier: Category.couldNotAdd, actions: [], intentIdentifiers: [])
-        center.setNotificationCategories([added, ask, couldNotAdd])
+        // Opens later.exe's review screen, never the form itself: nothing is filled or opened until
+        // the user has seen the domain and the answers (CLAUDE.md §4.6, §4.7).
+        let form = UNNotificationCategory(
+            identifier: Category.form,
+            actions: [UNNotificationAction(identifier: Action.review, title: "Review", options: [.foreground])],
+            intentIdentifiers: []
+        )
+        center.setNotificationCategories([added, ask, couldNotAdd, form])
     }
 
     func requestAuthorization() async -> Bool {
@@ -78,6 +88,15 @@ final class NotificationService: NSObject, UNUserNotificationCenterDelegate {
              category: Category.couldNotAdd, proposal: p)
     }
 
+    func postForm(_ f: FormProposal, missing: Int) {
+        let count = f.payload.fields.count
+        let body = missing > 0
+            ? "\(count) questions · \(missing) need you · \(f.payload.domain)"
+            : "\(count) questions · ready to pre-fill · \(f.payload.domain)"
+        post(id: f.id, title: "Registration form found", body: body + "\nSnapsort fills it in — you press Submit.",
+             category: Category.form, form: f)
+    }
+
     /// At most one of these is shown at a time (same identifier).
     func postError(_ message: String) {
         post(id: "server-error", title: "Snapsort couldn't reach the server", body: message, category: "")
@@ -88,7 +107,8 @@ final class NotificationService: NSObject, UNUserNotificationCenterDelegate {
         center.removePendingNotificationRequests(withIdentifiers: [id])
     }
 
-    private func post(id: String, title: String, body: String, category: String, proposal: Proposal? = nil, eventId: String? = nil) {
+    private func post(id: String, title: String, body: String, category: String, proposal: Proposal? = nil,
+                      eventId: String? = nil, form: FormProposal? = nil) {
         let content = UNMutableNotificationContent()
         content.title = title
         content.body = body
@@ -97,6 +117,7 @@ final class NotificationService: NSObject, UNUserNotificationCenterDelegate {
         var info: [String: String] = [:]
         if let json = proposal?.jsonString { info["proposal"] = json }
         if let eventId { info["eventId"] = eventId }
+        if let form, let data = try? JSONEncoder.api.encode(form) { info["form"] = String(data: data, encoding: .utf8) }
         content.userInfo = info
         center.add(UNNotificationRequest(identifier: id, content: content, trigger: nil))
     }
@@ -115,8 +136,13 @@ final class NotificationService: NSObject, UNUserNotificationCenterDelegate {
         let eventId = content.userInfo["eventId"] as? String
         let action = response.actionIdentifier
         let category = content.categoryIdentifier
+        let form = (content.userInfo["form"] as? String)
+            .flatMap { $0.data(using: .utf8) }
+            .flatMap { try? JSONDecoder.api.decode(FormProposal.self, from: $0) }
         Task { @MainActor in
-            if let proposal {
+            if let form, action != UNNotificationDismissActionIdentifier {
+                Agent.shared.handleFormNotification(form)
+            } else if let proposal {
                 await Agent.shared.handleNotification(action: action, category: category, proposal: proposal, eventId: eventId)
             }
             completionHandler()

@@ -23,6 +23,7 @@ struct SnapsortApp: App {
             RootView()
                 .environmentObject(Store.shared)
                 .environmentObject(Agent.shared)
+                .environmentObject(Profile.shared)
                 .preferredColorScheme(.dark)
         }
         .onChange(of: scenePhase) { _, phase in

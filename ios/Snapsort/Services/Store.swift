@@ -11,6 +11,10 @@ struct ActivityRecord: Codable, Identifiable, Equatable {
     var timestamp: Date = Date()
     var eventId: String? = nil // EventKit eventIdentifier, for Undo
     var proposal: Proposal? = nil // kept so Home can confirm or undo later without the backend
+    /// Set for registration forms (kind "form"); Review then opens the form screen instead of adding.
+    var form: FormProposal? = nil
+
+    var isForm: Bool { form != nil }
 }
 
 struct LogLine: Codable, Equatable, Identifiable {
@@ -176,6 +180,12 @@ final class Store: ObservableObject {
             }
         }
         return dropped
+    }
+}
+
+extension FormProposal {
+    func activity(_ status: ActivityStatus, _ summary: String) -> ActivityRecord {
+        ActivityRecord(id: id, title: title, status: status, summary: summary, eventTime: payload.domain, form: self)
     }
 }
 

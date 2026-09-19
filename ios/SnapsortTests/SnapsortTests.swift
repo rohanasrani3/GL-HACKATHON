@@ -143,3 +143,90 @@ final class HomeStateTests: XCTestCase {
         XCTAssertEqual(b.activity("keep")?.proposal?.id, "keep")
     }
 }
+
+/// v3 forms: the /analyze `forms` shape from backend/snapsort/schema.py.
+private let formJSON = """
+{
+  "proposals": [], "genre": "poster", "skipped_reason": null, "model": "mock", "latency_ms": 10,
+  "links": [{"url": "https://forms.gle/x", "domain": "forms.gle", "title": null, "description": null, "is_form": true, "source": "qr"}],
+  "forms": [{
+    "id": "f1", "action": "form.prefill", "decision": "ask", "confidence": 0.9, "evidence": "forms.gle/x", "notes": [],
+    "payload": {
+      "form_url": "https://docs.google.com/forms/d/e/ABC/viewform?usp=sf_link",
+      "title": "Talk signup", "domain": "docs.google.com", "prefill_style": "google_forms",
+      "provider": "google_forms", "reasons": ["Google Forms link"],
+      "fields": [
+        {"entry_id": "entry.1", "question": "Your name", "profile_key": "full_name", "required": true, "type": "short_text", "options": [], "sensitive": false},
+        {"entry_id": "entry.2", "question": "Email", "profile_key": "email", "required": true, "type": "short_text", "options": []},
+        {"entry_id": "entry.3", "question": "Session", "profile_key": null, "required": false, "type": "multiple_choice", "options": ["AM", "PM"]},
+        {"entry_id": "entry.4", "question": "Passport number", "profile_key": null, "sensitive": true}
+      ]
+    }
+  }]
+}
+"""
+
+@MainActor
+final class FormTests: XCTestCase {
+    private func form() throws -> FormProposal {
+        try XCTUnwrap(JSONDecoder.api.decode(AnalyzeResponse.self, from: Data(formJSON.utf8)).forms?.first)
+    }
+
+    func testDecodesFormsAndLinks() throws {
+        let r = try JSONDecoder.api.decode(AnalyzeResponse.self, from: Data(formJSON.utf8))
+        XCTAssertEqual(r.links?.first?.isForm, true)
+        let f = try form()
+        XCTAssertEqual(f.payload.fields.map(\.entryId), ["entry.1", "entry.2", "entry.3", "entry.4"])
+        XCTAssertTrue(f.payload.fields[3].isSensitive)
+        XCTAssertFalse(f.payload.fields[1].isSensitive) // missing "sensitive" defaults to false
+        XCTAssertTrue(f.canPrefill)
+        XCTAssertEqual(f.destinationLabel, "Google Forms")
+    }
+
+    func testPrefillURLNeverContainsSensitiveFields() throws {
+        let url = try XCTUnwrap(try form().prefillURL(values: [
+            "entry.1": "Ada Lovelace", "entry.2": "ada+talk@example.com", "entry.3": "PM", "entry.4": "K1234567",
+        ]))
+        let s = url.absoluteString
+        XCTAssertTrue(s.hasPrefix("https://docs.google.com/forms/d/e/ABC/viewform?usp=pp_url&entry.1=Ada%20Lovelace"))
+        XCTAssertTrue(s.contains("entry.2=ada%2Btalk@example.com"))
+        XCTAssertTrue(s.contains("entry.3=PM"))
+        XCTAssertFalse(s.contains("entry.4"))
+        XCTAssertFalse(s.contains("K1234567"))
+        XCTAssertFalse(s.contains("sf_link")) // original query replaced, like Android's clearQuery()
+    }
+
+    func testNoPrefillStyleOpensTheOriginalLink() throws {
+        let json = formJSON.replacingOccurrences(of: "\"prefill_style\": \"google_forms\"", with: "\"prefill_style\": \"none\"")
+        let f = try XCTUnwrap(JSONDecoder.api.decode(AnalyzeResponse.self, from: Data(json.utf8)).forms?.first)
+        XCTAssertFalse(f.canPrefill)
+        XCTAssertEqual(f.prefillURL(values: ["entry.1": "x"])?.absoluteString, f.payload.formUrl)
+    }
+
+    func testProfileSeedsKnownAnswersOnly() throws {
+        let suite = "snapsort-tests-\(UUID().uuidString)"
+        let profile = Profile(defaults: UserDefaults(suiteName: suite)!)
+        defer { UserDefaults().removePersistentDomain(forName: suite) }
+        profile.putAll(["full_name": "Ada", "email": "  ", "student_id": "3035"])
+        let f = try form()
+        XCTAssertEqual(f.seededValues(from: profile), ["entry.1": "Ada"])
+        XCTAssertEqual(f.missingCount(profile: profile), 3) // email blank, session and passport have no key
+    }
+
+    func testFormRecordsShowFormDestination() throws {
+        var s = PersistedState()
+        s.activities = [try form().activity(.needsAttention, "2 answers needed")]
+        let home = HomeUiState.make(from: s, processingSince: nil)
+        XCTAssertEqual(home.needsAttention.first?.destination?.label, "Google Forms")
+        XCTAssertEqual(home.needsAttention.first?.eventTime, "docs.google.com")
+    }
+
+    func testMultiDayAllDayRange() throws {
+        let json = analyzeJSON
+            .replacingOccurrences(of: "\"2026-09-25T16:00:00+08:00\"", with: "\"2026-10-12\"")
+            .replacingOccurrences(of: "\"2026-09-25T17:30:00+08:00\"", with: "\"2026-10-17\"")
+            .replacingOccurrences(of: "\"all_day\": false", with: "\"all_day\": true")
+        let p = try JSONDecoder.api.decode(AnalyzeResponse.self, from: Data(json.utf8)).proposals[0]
+        XCTAssertEqual(p.prettyWhen, "Mon 12 – Fri 16 Oct")
+    }
+}

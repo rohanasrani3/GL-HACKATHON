@@ -3,9 +3,9 @@ import UIKit
 
 /// Launch arguments used by CI and demos (`-name value` lands in UserDefaults' argument domain):
 ///   -demoState default|active|processing|offline|inactive|noAttention|multipleAttention|longTitle
-///   -demoScreen settings
+///   -demoScreen settings|form
 ///   -serverURL http://127.0.0.1:8000
-///   -selfTest analyze,analyze,analyze,confirm,undo
+///   -selfTest analyze,analyze,analyze,confirm,undo,form,openForm
 enum LaunchMode {
     static var isRunningTests: Bool { ProcessInfo.processInfo.environment["XCTestConfigurationFilePath"] != nil }
     static var demoState: String? { UserDefaults.standard.string(forKey: "demoState") }
@@ -46,6 +46,17 @@ enum SelfTest {
                 } else {
                     report.append("undo: nothing to undo")
                 }
+            case "form":
+                // Forms need a live Google Form page, which the mock backend can't provide, so this
+                // feeds the backend's FormProposal shape straight into the same code path.
+                let lines = agent.receive(forms: [SampleData.form])
+                report.append("form: \(lines.first ?? "nothing") -> \(agent.store.activity(SampleData.form.id)?.status.rawValue ?? "?")")
+            case "openForm":
+                agent.profile.putAll(["full_name": "Test User", "email": "test@example.com"])
+                let values = SampleData.form.seededValues(from: agent.profile)
+                    .merging(["entry.1004": "Afternoon", "entry.1005": "A123456(7)"]) { a, _ in a }
+                let url = agent.openForm(SampleData.form, values: values)
+                report.append("openForm: \(url?.absoluteString ?? "nil") -> \(agent.store.activity(SampleData.form.id)?.status.rawValue ?? "?")")
             case "reset":
                 agent.store.clearActivity()
                 report.append("reset")

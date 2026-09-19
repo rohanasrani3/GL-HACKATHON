@@ -8,12 +8,21 @@ struct RootView: View {
     @State private var showSettings = LaunchMode.demoScreen == "settings"
     @State private var reviewing: ActivityRecord?
     @State private var editAfterReview: Proposal?
+    private let demoForm = LaunchMode.demoScreen == "form" ? SampleData.form : nil
 
     var body: some View {
         ZStack(alignment: .bottom) {
             Relay.background.ignoresSafeArea()
 
-            if showSettings {
+            if let form = agent.reviewingForm ?? demoForm {
+                FormReviewView(
+                    form: form,
+                    onOpen: { values in agent.openForm(form, values: values) },
+                    onDismiss: { agent.dismissForm(form) },
+                    onBack: { agent.reviewingForm = nil }
+                )
+                .id(form.id)
+            } else if showSettings {
                 SettingsView(onBack: { showSettings = false })
             } else {
                 // Re-render every second so "Reading screenshot… 12s" and "2 min ago" stay live.
@@ -21,7 +30,10 @@ struct RootView: View {
                     HomeView(
                         state: homeState(now: context.date),
                         onUndo: { id in agent.undo(recordId: id) },
-                        onReview: { id in reviewing = store.activity(id) },
+                        onReview: { id in
+                            // Forms go to their own review screen; events to the Review sheet.
+                            if let form = store.activity(id)?.form { agent.reviewingForm = form } else { reviewing = store.activity(id) }
+                        },
                         onOverflow: { showSettings = true },
                         onRefresh: { await agent.scan() }
                     )

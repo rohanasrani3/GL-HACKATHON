@@ -101,6 +101,9 @@ jobs:
           xcrun simctl launch --terminate-running-process "$UDID" "$BUNDLE_ID" -demoScreen settings
           sleep 4
           xcrun simctl io "$UDID" screenshot run/settings.png
+          xcrun simctl launch --terminate-running-process "$UDID" "$BUNDLE_ID" -demoScreen form
+          sleep 4
+          xcrun simctl io "$UDID" screenshot run/form-review.png
           xcrun simctl terminate "$UDID" "$BUNDLE_ID" || true
 
       - name: End-to-end against the mock backend
@@ -118,10 +121,22 @@ jobs:
           sleep 10
           xcrun simctl io "$UDID" screenshot run/e2e-2-after-confirm-undo.png
           cp "$DATA/Documents/selftest.txt" run/selftest-2.txt
+
+          # Forms: the backend's FormProposal shape → Needs your input → pre-filled link
+          xcrun simctl launch --terminate-running-process "$UDID" "$BUNDLE_ID" -selfTest form
+          sleep 6
+          xcrun simctl io "$UDID" screenshot run/e2e-3-form-found.png
+          cp "$DATA/Documents/selftest.txt" run/selftest-3.txt
+          xcrun simctl launch --terminate-running-process "$UDID" "$BUNDLE_ID" -selfTest openForm
+          sleep 6
+          xcrun simctl io "$UDID" screenshot run/e2e-4-form-opened.png
+          cp "$DATA/Documents/selftest.txt" run/selftest-4.txt
           cp "$DATA/Library/Application Support/snapsort-state.json" run/state.json
 
           echo "--- self-test 1"; cat run/selftest-1.txt
           echo "--- self-test 2"; cat run/selftest-2.txt
+          echo "--- self-test 3"; cat run/selftest-3.txt
+          echo "--- self-test 4"; cat run/selftest-4.txt
           echo "--- feedback"; cat evals/results/feedback.jsonl || true
 
           grep -q "Added Generative AI in Healthcare" run/selftest-1.txt
@@ -130,6 +145,10 @@ jobs:
           grep -q "confirm: Dinner with Sam -> EXECUTED" run/selftest-2.txt
           grep -q -- "-> UNDONE" run/selftest-2.txt
           test "$(grep -c '"outcome"' evals/results/feedback.jsonl)" -ge 3
+          grep -q "form: Registration form found: HKU AI Talk" run/selftest-3.txt
+          grep -q -- "-> NEEDS_ATTENTION" run/selftest-3.txt
+          grep -q "openForm: https://docs.google.com/forms/d/e/1FAIpQLSf-example/viewform?usp=pp_url&entry.1001=Test%20User&entry.1002=test@example.com&entry.1004=Afternoon -> EXECUTED" run/selftest-4.txt
+          ! grep -q "A123456" run/selftest-4.txt   # the sensitive ID field never reaches the URL
 
       - name: Upload results
         if: always()

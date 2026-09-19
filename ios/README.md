@@ -19,9 +19,9 @@ cd ios && xcodegen generate && open Snapsort.xcodeproj
 | Folder | What |
 |---|---|
 | `Snapsort/Models` | API contract, Home presentation models, `HomeUiState.make` (same mapping as Android's `HomeState.kt`), sample data |
-| `Snapsort/Services` | `Agent` (the pipeline and user actions), `Store` (persistence and retry queue), `APIClient`, `CalendarService` (EventKit), `NotificationService`, `ScreenshotScanner` (PhotoKit), `BackgroundRefresh`, `LaunchMode`/`SelfTest` |
+| `Snapsort/Services` | `Agent` (the pipeline and user actions), `Store` (persistence and retry queue), `APIClient`, `CalendarService` (EventKit), `NotificationService`, `ScreenshotScanner` (PhotoKit), `BackgroundRefresh`, `Forms` (profile + pre-fill URLs, v3), `LaunchMode`/`SelfTest` |
 | `Snapsort/Intents` | App Intents: "Snapsort a screenshot" (Back Tap, Action Button and share sheet via Shortcuts), "Check latest screenshot" |
-| `Snapsort/UI` | Theme, Home, Settings, Review sheet, calendar editor |
+| `Snapsort/UI` | Theme, Home, Settings (incl. your details for forms), Review sheet, form review, calendar editor |
 | `SnapsortTests` | Unit tests: API decoding, Home state mapping, store and retry queue |
 
 ## Launch arguments (demos and CI)
@@ -29,6 +29,6 @@ cd ios && xcodegen generate && open Snapsort.xcodeproj
 | Argument | Effect |
 |---|---|
 | `-demoState default` | Home with sample data. Other states: `active`, `processing`, `offline`, `inactive`, `noAttention`, `multipleAttention`, `longTitle` |
-| `-demoScreen settings` | Open on Settings |
+| `-demoScreen settings` / `form` | Open on Settings, or on the form review screen with a sample form |
 | `-serverURL http://…` | Override the server URL |
-| `-selfTest analyze,analyze,confirm,undo` | Run the real pipeline on the bundled sample screenshot and write `Documents/selftest.txt` |
+| `-selfTest analyze,analyze,confirm,undo,form,openForm` | Run the real pipeline on the bundled sample screenshot and write `Documents/selftest.txt` |

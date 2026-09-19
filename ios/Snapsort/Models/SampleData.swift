@@ -36,6 +36,31 @@ enum SampleData {
         recentActivity: [buildNight, orientationDay, longHealthcareEvent]
     )
 
+    /// A Google Form as the backend describes it (shape of FormProposal in backend/snapsort/schema.py).
+    static let form = FormProposal(
+        id: "form-hku-ai-talk",
+        action: "form.prefill",
+        decision: "ask",
+        payload: FormPayload(
+            formUrl: "https://docs.google.com/forms/d/e/1FAIpQLSf-example/viewform",
+            title: "HKU AI Talk — Registration",
+            domain: "docs.google.com",
+            fields: [
+                FormField(entryId: "entry.1001", question: "Full name", profileKey: "full_name", required: true, type: "short_text", options: nil, sensitive: false),
+                FormField(entryId: "entry.1002", question: "Email address", profileKey: "email", required: true, type: "short_text", options: nil, sensitive: false),
+                FormField(entryId: "entry.1003", question: "Student number", profileKey: "student_id", required: false, type: "short_text", options: nil, sensitive: false),
+                FormField(entryId: "entry.1004", question: "Which session?", profileKey: nil, required: true, type: "multiple_choice", options: ["Morning", "Afternoon"], sensitive: false),
+                FormField(entryId: "entry.1005", question: "HKID number", profileKey: nil, required: false, type: "short_text", options: nil, sensitive: true),
+            ],
+            prefillStyle: "google_forms",
+            provider: "google_forms",
+            reasons: ["Google Forms link", "5 questions read from the page"]
+        ),
+        confidence: 0.9,
+        evidence: "forms.gle/example",
+        notes: ["source:qr"]
+    )
+
     static func state(named name: String) -> HomeUiState {
         var s = defaultState
         switch name {
@@ -54,8 +79,9 @@ enum SampleData {
         case "multipleAttention":
             s.needsAttention = [
                 assignmentNeedsInput,
-                ActivityItem(id: "registration-form", title: "Conference registration form", status: .needsAttention,
-                             destination: ToolDestination(label: "Browser", symbol: "↗"), summary: "Two required fields need your input"),
+                ActivityItem(id: "registration-form", title: "HKU AI Talk — Registration", status: .needsAttention,
+                             destination: ToolDestination(label: "Google Forms", symbol: "≡"), summary: "2 answers needed",
+                             eventTime: "docs.google.com", activityTimestamp: "Just now"),
             ]
         case "longTitle":
             s.processingItem = nil

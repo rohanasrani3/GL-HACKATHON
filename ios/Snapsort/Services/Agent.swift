@@ -21,20 +21,24 @@ final class Agent: ObservableObject {
     let calendar: CalendarService
     let notifier: NotificationService
     let scanner: ScreenshotScanner
+    let profile: Profile
 
     /// Drives the pre-filled calendar editor (Edit, or Add without calendar access).
     @Published var editing: Proposal?
+    /// Drives the form review screen (from Home's Review or the "form found" notification).
+    @Published var reviewingForm: FormProposal?
     @Published var toast: String?
 
     private var scanning = false
     private var startedUp = false
 
-    init(store: Store = .shared, calendar: CalendarService = .shared,
-         notifier: NotificationService = .shared, scanner: ScreenshotScanner = .shared) {
+    init(store: Store = .shared, calendar: CalendarService = .shared, notifier: NotificationService = .shared,
+         scanner: ScreenshotScanner = .shared, profile: Profile = .shared) {
         self.store = store
         self.calendar = calendar
         self.notifier = notifier
         self.scanner = scanner
+        self.profile = profile
     }
 
     private func api() throws -> APIClient {
@@ -178,14 +182,15 @@ final class Agent: ObservableObject {
             store.update { $0.lastError = nil } // a successful round-trip clears OFFLINE
             let secs = result.latencyMs / 1000
 
-            if result.proposals.isEmpty {
+            let forms = result.forms ?? []
+            if result.proposals.isEmpty && forms.isEmpty {
                 let reason = result.skippedReason ?? "nothing found"
                 store.log("⏭ Skipped: \(reason) · \(secs)s")
                 store.recordActivity(ActivityRecord(id: "skipped-\(sourceId)", title: "Screenshot skipped", status: .skipped, summary: reason))
                 return ProcessOutcome(ok: true, summary: "Nothing to add (\(reason)).")
             }
 
-            var lines: [String] = []
+            var lines = receive(forms: forms)
             for p in result.proposals {
                 if store.handledEventId(p.id) != nil {
                     lines.append("Already added: \(p.payload.title)")
@@ -241,6 +246,11 @@ final class Agent: ObservableObject {
     }
 
     func confirm(recordId: String) async {
+        // Forms open the review screen instead of writing anything (CLAUDE.md §4.6).
+        if let form = store.activity(recordId)?.form {
+            reviewingForm = form
+            return
+        }
         guard let p = store.activity(recordId)?.proposal else {
             show("This item can no longer be confirmed")
             return
@@ -293,6 +303,59 @@ final class Agent: ObservableObject {
         store.recordActivity(p.activity(.executed, "Added to calendar (edited)", eventId: eventId))
         feedback(p, "edited")
         show("Added to calendar")
+    }
+
+    // MARK: Forms (v3)
+
+    /// Record and announce forms found in a screenshot. Nothing is opened or filled here: the
+    /// user reviews first and presses Submit themselves (CLAUDE.md §4.6).
+    func receive(forms: [FormProposal]) -> [String] {
+        var lines: [String] = []
+        for f in forms {
+            if store.activity(f.id)?.status == .executed { continue } // already opened this one
+            let missing = f.missingCount(profile: profile)
+            notifier.postForm(f, missing: missing)
+            store.log("📝 Form found: \(f.payload.domain) · \(f.payload.fields.count) questions, \(missing) to fill")
+            store.recordActivity(f.activity(.needsAttention, missing > 0 ? "\(missing) answers needed" : "Ready to pre-fill"))
+            lines.append("Registration form found: \(f.title) (\(f.payload.domain)). Open later.exe to review it.")
+        }
+        return lines
+    }
+
+    /// Save any new answers to the profile, then open the pre-filled form in Safari.
+    /// This is where Snapsort stops: the user presses Submit (CLAUDE.md §4.6).
+    @discardableResult
+    func openForm(_ form: FormProposal, values: [String: String]) -> URL? {
+        var learned: [String: String] = [:]
+        for field in form.payload.fields where !field.isSensitive {
+            // Passwords, card numbers and ID numbers are never stored (§4.6).
+            if let key = field.profileKey, let v = values[field.entryId], !v.trimmingCharacters(in: .whitespaces).isEmpty {
+                learned[key] = v
+            }
+        }
+        if !learned.isEmpty { profile.putAll(learned) }
+
+        let url = form.prefillURL(values: values)
+        let answered = values.values.filter { !$0.trimmingCharacters(in: .whitespaces).isEmpty }.count
+        store.log("📝 Opened pre-filled form: \(form.payload.domain) (\(answered) answers)")
+        store.recordActivity(form.activity(.executed, "Pre-filled — submit it yourself"))
+        notifier.remove(form.id)
+        reviewingForm = nil
+        if let url, !LaunchMode.isAutomated {
+            UIApplication.shared.open(url)
+        }
+        return url
+    }
+
+    func dismissForm(_ form: FormProposal) {
+        notifier.remove(form.id)
+        store.log("✖ Dismissed form: \(form.payload.domain)")
+        store.recordActivity(form.activity(.dismissed, "Dismissed"))
+        reviewingForm = nil
+    }
+
+    func handleFormNotification(_ form: FormProposal) {
+        reviewingForm = store.activity(form.id)?.form ?? form
     }
 
     func handleNotification(action: String, category: String, proposal p: Proposal, eventId: String?) async {

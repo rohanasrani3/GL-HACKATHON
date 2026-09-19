@@ -6,6 +6,7 @@ import SwiftUI
 struct SettingsView: View {
     @EnvironmentObject private var store: Store
     @EnvironmentObject private var agent: Agent
+    @EnvironmentObject private var profile: Profile
     let onBack: () -> Void
 
     @State private var serverURL = ""
@@ -13,6 +14,7 @@ struct SettingsView: View {
     @State private var testing = false
     @State private var picked: PhotosPickerItem?
     @State private var notificationStatus = "…"
+    @State private var details: [String: String] = [:]
 
     var body: some View {
         ScrollView {
@@ -26,8 +28,8 @@ struct SettingsView: View {
                 Text("The team backend runs at https://gl-hackathon.onrender.com (it can take a minute to wake up). For a local backend use your laptop's IP, or http://localhost:8000 in the Simulator.")
                     .font(RelayFont.bodyMedium).foregroundStyle(Relay.textMuted)
 
-                RelayField(label: "Laptop server URL", text: $serverURL, keyboard: .URL)
-                RelayField(label: "API token (optional)", text: $apiToken, keyboard: .default)
+                RelayField(label: "Server URL", text: $serverURL, keyboard: .URL)
+                RelayField(label: "API token", text: $apiToken, keyboard: .default)
 
                 Button(testing ? "Testing…" : "Save & test connection") { saveAndTest() }
                     .buttonStyle(RelayFilledButtonStyle(fill: Relay.green, height: 48))
@@ -64,6 +66,27 @@ struct SettingsView: View {
                 }
                 .buttonStyle(RelayOutlineButtonStyle())
 
+                SectionTitle("Your details (for forms)")
+                Text("When a screenshot has a registration link or QR code, Snapsort pre-fills the form with these. They stay on this phone and are never sent to the server. Forms you fill in add to them.")
+                    .font(RelayFont.bodyMedium).foregroundStyle(Relay.textMuted)
+                ForEach(Profile.keys, id: \.self) { key in
+                    RelayField(label: Profile.label(key), text: detailBinding(key),
+                               keyboard: key == "email" ? .emailAddress : key == "phone" ? .phonePad : .default)
+                }
+                HStack(spacing: 12) {
+                    Button("Save details") {
+                        profile.putAll(details)
+                        agent.show("Details saved on this phone")
+                    }
+                    .buttonStyle(RelayOutlineButtonStyle())
+                    Button("Forget details") {
+                        profile.clear()
+                        details = [:]
+                        agent.show("Details removed")
+                    }
+                    .buttonStyle(RelayOutlineButtonStyle())
+                }
+
                 SectionTitle("Instant capture (Back Tap)")
                 Text("iOS doesn't let apps react the moment you take a screenshot. For one-gesture capture: in Shortcuts, make a shortcut with “Take Screenshot” then “Snapsort a screenshot”, and assign it in Settings → Accessibility → Touch → Back Tap (or to the Action Button).")
                     .font(RelayFont.bodyMedium).foregroundStyle(Relay.textMuted)
@@ -92,6 +115,7 @@ struct SettingsView: View {
         .onAppear {
             serverURL = store.state.serverURL
             apiToken = store.state.apiToken
+            details = profile.values
         }
         .task { notificationStatus = await agent.notifier.statusText() }
         .onChange(of: picked) { _, item in
@@ -107,6 +131,10 @@ struct SettingsView: View {
                 picked = nil
             }
         }
+    }
+
+    private func detailBinding(_ key: String) -> Binding<String> {
+        Binding(get: { details[key, default: ""] }, set: { details[key] = $0 })
     }
 
     private func saveFields() {
