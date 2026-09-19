@@ -5,7 +5,7 @@
 **Hackathon scope** (a deliberate subset of [CLAUDE.md](CLAUDE.md) / [skills.md](skills.md)):
 - Android only, Kotlin. Watcher = foreground service + `ContentObserver` (not WorkManager).
 - No on-device OCR. The phone uploads the image and the backend does triage + extraction in one model call.
-- Backend = FastAPI on the laptop. Model = Gemma 4 via Ollama, with a hosted fallback switch (`MODEL_PROVIDER=claude`).
+- Backend = FastAPI on the laptop. Model = Gemma 4 E2B (`gemma4:e2b-it-qat`) via Ollama, with a hosted fallback switch (`MODEL_PROVIDER=claude`).
 - **Policy gate lives in the backend** so Android and iOS behave the same: each proposal carries `decision` = `auto_add` (confidence ≥ 0.8 and nothing unclear) or `ask` (0.5–0.8, or date/time uncertain). Below 0.5 is dropped.
 - Calendar write: `auto_add` writes directly (Android CalendarContract / iOS EventKit), then notifies with **Undo**. `ask` waits for **Add**. Without calendar permission everything falls back to `ask` + the calendar app's editor.
 - iOS app is built by a coworker (with Codex) from [frontend.md](frontend.md).
@@ -30,15 +30,14 @@ Legend: `[x]` done · `[~]` in progress · `[ ]` todo · `[!]` blocked / needs d
 - [x] `POST /feedback` (ids + outcome only → `evals/results/feedback.jsonl`); `/health` returns thresholds + `api_version`
 - [x] `MODEL_PROVIDER=mock`: canned auto_add / ask / skip cycle so frontends can be built without a model
 - [x] Unit + API tests: 21/21 passing
-- [!] **Latency: 34–77s per screenshot** with gemma4:12b (only 8/49 layers fit in 4 GB VRAM). Options:
-  1. Pull `gemma4:e2b-it-qat` (4.3 GB) → should fit mostly on GPU. **Needs approval to download.**
-  2. `MODEL_PROVIDER=claude` for the live demo (needs an API key).
-  3. Run the backend on a teammate's laptop with a bigger GPU.
+- [x] **Latency fixed:** switched default to `gemma4:e2b-it-qat` → **5–9 s per screenshot** (was 34–77 s with gemma4:12b). Fallbacks if needed: `OLLAMA_MODEL=gemma4:12b` (slower, same accuracy on evals) or `MODEL_PROVIDER=claude`.
+- [x] Ollama client retries once on 5xx (model-loading race on first request)
 
 ## Phase 2: Evals (`/evals`)
 - [x] `make_samples.py`: 5 synthetic screenshots (poster, chat, ticket, meme, injection)
 - [x] `run.py`: scores each against `expected/*.json`
-- [x] Result with gemma4:12b: **5/5 correct**, including ignoring the prompt-injection image
+- [x] gemma4:12b: **5/5 correct**, median 72 s
+- [x] gemma4:e2b-it-qat: **5/5 correct**, median 8.8 s ← current default
 - [ ] Team: add 15 real screenshots to `evals/screenshots/real/` + expected JSON
 
 ## Phase 3: Android (`/android`)
@@ -86,3 +85,4 @@ cd backend
 - 18:05: Android app written (5 Kotlin files). Needs building in Android Studio.
 - 18:10: Paused. Resume: (1) decide on model speed (download gemma4:e2b-it-qat / use Claude / bigger GPU), (2) build Android app in Android Studio, (3) end-to-end test. Nothing committed yet.
 - Resumed. New requirements: auto-add confident events and notify afterwards; ask first for unclear ones. Backend now returns `decision` + `id`, has `/feedback` and a mock provider (21/21 tests). Android updated (CalendarWriter, ActionReceiver, new notifications). Wrote frontend.md for the iOS coworker. **Still open:** model speed decision (download gemma4:e2b-it-qat?), Android build in Android Studio.
+- 20:15: User installed `gemma4:e2b-it-qat`. Evals 5/5, median 8.8 s (8× faster). Now the default. Added a 5xx retry. **Next:** Android build in Android Studio, then phone ↔ laptop end-to-end.

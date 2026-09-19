@@ -24,7 +24,7 @@ _load_dotenv()
 class Settings:
     model_provider: str = os.getenv("MODEL_PROVIDER", "ollama")
     ollama_url: str = os.getenv("OLLAMA_URL", "http://localhost:11434")
-    ollama_model: str = os.getenv("OLLAMA_MODEL", "gemma4:12b")
+    ollama_model: str = os.getenv("OLLAMA_MODEL", "gemma4:e2b-it-qat")
     claude_model: str = os.getenv("CLAUDE_MODEL", "claude-opus-5")
     api_token: str = os.getenv("API_TOKEN", "")
     default_timezone: str = os.getenv("DEFAULT_TIMEZONE", "Asia/Hong_Kong")

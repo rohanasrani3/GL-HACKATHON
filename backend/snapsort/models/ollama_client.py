@@ -1,4 +1,5 @@
 """Local Gemma via Ollama (/api/chat with a JSON-schema `format`)."""
+import asyncio
 import json
 
 import httpx
@@ -45,7 +46,12 @@ class OllamaClient:
             "options": {"temperature": 0},
         }
         async with httpx.AsyncClient(timeout=180) as client:
-            r = await client.post(f"{self.base_url}/api/chat", json=body)
+            # Ollama can 500 while the model is still loading (seen on the GTX 1650): retry once.
+            for attempt in range(2):
+                r = await client.post(f"{self.base_url}/api/chat", json=body)
+                if r.status_code < 500 or attempt == 1:
+                    break
+                await asyncio.sleep(3)
             r.raise_for_status()
         content = r.json()["message"]["content"]
         return Extraction.model_validate(json.loads(content))

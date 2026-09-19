@@ -41,7 +41,7 @@ Mock mode cycles through 3 responses on successive `/analyze` calls, whatever im
 | 2, 5, 8… | 1 proposal, `decision: "ask"` ("Dinner with Sam", this coming Friday 19:30) |
 | 3, 6, 9… | 0 proposals, `skipped_reason: "meme"` |
 
-With the real model (`MODEL_PROVIDER=ollama`), one screenshot can take **30–90 s** on the team laptop. **All networking must tolerate a 240 s timeout**, and the UI must show progress.
+With the real model (`MODEL_PROVIDER=ollama`, `gemma4:e2b-it-qat`), one screenshot takes **~5–10 s** on the team laptop, but up to 60 s+ on the first call while the model loads, or if a bigger model is configured. **All networking must tolerate a 240 s timeout**, and the UI must show progress.
 
 **Base URL:** user-configurable in Settings, e.g. `http://192.168.1.23:8000` (laptop on the same Wi-Fi or hotspot) or `http://laptop.tailnet.ts.net:8000` (Tailscale). Default: `http://localhost:8000` (works in the iOS Simulator on the same Mac).
 
@@ -58,7 +58,7 @@ All endpoints are plain HTTP + JSON, except `/analyze`, which takes a multipart 
 Use this for the "Test connection" button and to read the policy thresholds (display only).
 
 ```json
-{ "ok": true, "api_version": 1, "model": "ollama:gemma4:12b", "auto_add_threshold": 0.8, "ask_threshold": 0.5 }
+{ "ok": true, "api_version": 1, "model": "ollama:gemma4:e2b-it-qat", "auto_add_threshold": 0.8, "ask_threshold": 0.5 }
 ```
 
 If `api_version != 1`, show a warning: "Backend version mismatch".
@@ -99,8 +99,8 @@ If `api_version != 1`, show a warning: "Backend version mismatch".
   ],
   "genre": "poster",
   "skipped_reason": null,
-  "model": "ollama:gemma4:12b",
-  "latency_ms": 41250
+  "model": "ollama:gemma4:e2b-it-qat",
+  "latency_ms": 8759
 }
 ```
 
