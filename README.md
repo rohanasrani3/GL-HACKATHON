@@ -89,7 +89,7 @@ The architecture is designed so that adding a new domain means adding a new **sk
 
 | | Android | iOS |
 |---|---|---|
-| Detect new screenshots | `ContentObserver` on `MediaStore.Images` filtered to the `Screenshots` bucket, or `WorkManager` periodic scan | `PHPhotoLibraryChangeObserver` plus the `PHAssetMediaSubtype.photoScreenshot` filter. iOS can't run code when a screenshot is taken, so processing happens on app open, while the app is open, via `BGAppRefreshTask` (timing up to iOS), or from a share extension. |
+| Detect new screenshots | `ContentObserver` on `MediaStore.Images` filtered to the `Screenshots` bucket, or `WorkManager` periodic scan | `PHPhotoLibraryChangeObserver` plus the `PHAssetMediaSubtype.photoScreenshot` filter. iOS can't run code when a screenshot is taken, so processing happens on app open, while the app is open, via `BGAppRefreshTask` (timing up to iOS), or instantly via an App Intent bound to Back Tap / the Action Button. |
 | Calendar write | `CalendarContract` or the Google Calendar API | `EventKit` |
 | On-device OCR | ML Kit Text Recognition | Vision `VNRecognizeTextRequest` |
 
@@ -100,7 +100,7 @@ Hackathon build in progress. See [tasks.md](tasks.md) for status and run instruc
 ```
 /backend        FastAPI + model clients (Gemma via Ollama, Claude, mock) + calendar-event skill
 /android        Kotlin app (screenshot watcher, auto-add / ask notifications)
-/ios            Swift app, built from frontend.md
+/ios            SwiftUI app (same UI and behaviour as Android), spec in frontend.md
 /evals          labelled screenshots, expected outputs, eval runner
 ```
 

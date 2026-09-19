@@ -1,0 +1,65 @@
+# XcodeGen spec. Generate the Xcode project with:
+#   brew install xcodegen && cd ios && xcodegen generate && open Snapsort.xcodeproj
+# The .xcodeproj and Info.plist are generated, so they are git-ignored.
+name: Snapsort
+options:
+  bundleIdPrefix: com.snapsort
+  deploymentTarget:
+    iOS: "17.0"
+  createIntermediateGroups: true
+settings:
+  base:
+    SWIFT_VERSION: "5.0"
+    MARKETING_VERSION: "0.1"
+    CURRENT_PROJECT_VERSION: "1"
+    # Set your team here (or in Xcode → Signing) to install on a real iPhone.
+    DEVELOPMENT_TEAM: ""
+    CODE_SIGN_STYLE: Automatic
+targets:
+  Snapsort:
+    type: application
+    platform: iOS
+    sources:
+      - path: Snapsort
+    settings:
+      base:
+        PRODUCT_BUNDLE_IDENTIFIER: com.snapsort.ios
+        PRODUCT_NAME: Snapsort
+        TARGETED_DEVICE_FAMILY: "1"
+        ASSETCATALOG_COMPILER_APPICON_NAME: ""
+    info:
+      path: Snapsort/Info.plist
+      properties:
+        CFBundleDisplayName: later.exe
+        UILaunchScreen: {}
+        UIUserInterfaceStyle: Dark
+        UISupportedInterfaceOrientations: [UIInterfaceOrientationPortrait]
+        NSPhotoLibraryUsageDescription: "later.exe reads your new screenshots to find events. Other photos are never read or uploaded."
+        NSCalendarsFullAccessUsageDescription: "later.exe adds events it finds in your screenshots, and removes them if you tap Undo."
+        NSCalendarsWriteOnlyAccessUsageDescription: "later.exe adds events it finds in your screenshots."
+        NSCalendarsUsageDescription: "later.exe adds events it finds in your screenshots, and removes them if you tap Undo."
+        NSLocalNetworkUsageDescription: "later.exe talks to the Snapsort server on your local network."
+        # Hackathon only: the laptop backend is plain HTTP. Remove before any release.
+        NSAppTransportSecurity:
+          NSAllowsArbitraryLoads: true
+        UIBackgroundModes: [fetch, processing]
+        BGTaskSchedulerPermittedIdentifiers: [com.snapsort.refresh]
+  SnapsortTests:
+    type: bundle.unit-test
+    platform: iOS
+    sources:
+      - path: SnapsortTests
+    dependencies:
+      - target: Snapsort
+    settings:
+      base:
+        PRODUCT_BUNDLE_IDENTIFIER: com.snapsort.ios.tests
+        GENERATE_INFOPLIST_FILE: YES
+schemes:
+  Snapsort:
+    build:
+      targets:
+        Snapsort: all
+        SnapsortTests: [test]
+    test:
+      targets: [SnapsortTests]

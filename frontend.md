@@ -1,24 +1,24 @@
 # frontend.md: iOS app spec (Swift / SwiftUI)
 
-> **For the coding agent (OpenAI Codex or similar) building the iPhone app.** This file is self-contained. It has everything the iOS app must do and every backend call it must make. Build exactly this. Anything marked *Stretch* is only for when the core checklist in §14 passes.
+> **The iOS app is implemented in [`/ios`](ios/README.md)** as a port of the Android app (`/android`): the same later.exe "Relay" UI and the same behaviour. This file is the spec it follows and the contract both apps share with the backend. When you change behaviour, change it here, in `/ios`, and in `/android`.
 >
-> Background reading (optional): [README.md](README.md) (product), [CLAUDE.md](CLAUDE.md) (architecture and rules). The Android app in `/android` implements the same behaviour in Kotlin and can be used as a reference.
+> Background reading (optional): [README.md](README.md) (product), [CLAUDE.md](CLAUDE.md) (architecture and rules). Anything marked *Stretch* is only for when the core checklist in §14 passes.
 
 ---
 
 ## 0. TL;DR
 
-Snapsort watches the user's **screenshots**. For each new screenshot the app:
+Snapsort (branded **later.exe** in the app) watches the user's **screenshots**. For each new screenshot the app:
 
 1. Sends the image to our backend: `POST /analyze`.
 2. Gets back zero or more **proposals** (calendar events), each with a `decision`:
    - `"auto_add"`: the backend is confident. **Add it to the calendar immediately, then send a notification** "✅ Added to your calendar: …" with an **Undo** button.
-   - `"ask"`: the event is unclear. **Send a notification asking first**: "Add '…' to calendar?" with **Add / Edit / Dismiss**. Only add if the user taps Add.
-3. Reports what the user did: `POST /feedback`.
+   - `"ask"`: the event is unclear. **Send a notification asking first**: "Add '…' to calendar?" with **Add / Edit / Dismiss**. It also appears on Home under **Needs your input**. Only add it if the user says so.
+3. Records the outcome in the local activity feed that Home renders, and reports it: `POST /feedback`.
 
 The **backend decides** `auto_add` vs `ask`. The app never re-scores confidence. It just follows `decision`, with one exception: if the app can't auto-add (no full calendar access), it falls back to `ask`.
 
-**Target:** iOS 17+, Swift 5.9+, SwiftUI, async/await, **no third-party dependencies**.
+**Target:** iOS 17+, Swift 5.9+, SwiftUI, async/await, **no third-party dependencies**. The project is generated with XcodeGen from `ios/project.yml`.
 
 ---
 
@@ -240,29 +240,35 @@ func analyze(jpeg: Data, capturedAt: Date) async throws -> AnalyzeResponse {
 
 ## 3. Decision handling (core logic)
 
-`ProposalHandler.handle(_ proposal: Proposal)`:
+All entry points (scan, manual pick, App Intents, Home, notification buttons) go through one class, `Agent` (`ios/Snapsort/Services/Agent.swift`). On Android the same logic lives in `ScreenshotWatcherService.process`, `ActionReceiver` and `MainActivity`.
+
+`Agent.process(jpeg, capturedAt, sourceId)`:
 
 ```
-if already handled (proposal.id in HandledStore)       → skip (log "duplicate")
-if proposal.decision == "auto_add" AND calendar access == .fullAccess:
-    eventId = CalendarService.add(proposal)
-    if success → notify ADDED(proposal, eventId); feedback(added); log "✅ Added"
-    else       → notify ASK(proposal); log "❓ Asked (auto-add failed)"
-else:
-    notify ASK(proposal); log "❓ Asked"
-mark proposal.id handled
+processingSince = now                                  (Home shows "Reading screenshot… 12s")
+result = POST /analyze
+  on error → log "❌ …", lastError = message (Home shows OFFLINE), feed FAILED, "couldn't reach" notification,
+             screenshot stays in the retry queue
+lastError = nil
+if no proposals → feed SKIPPED(skipped_reason), log "⏭ Skipped"   (never a notification)
+for each proposal:
+    if proposal.id already handled                     → skip (dedup)
+    if decision == "auto_add" AND calendar == .fullAccess AND CalendarService.insert succeeds:
+        notify ADDED; feed EXECUTED(eventId); feedback(added); log "✅ Added"
+    else:
+        notify ASK;   feed NEEDS_ATTENTION;               log "❓ Asked"
+processingSince = nil
 ```
 
-Notification button handlers:
+User actions:
 
-| Notification | Button | Action |
+| Where | Action | What happens |
 |---|---|---|
-| ADDED | **Undo** (destructive) | `CalendarService.remove(eventId)`, remove the notification, feedback `undone`, log "↩ Undone" |
-| ADDED | **Open** (foreground) | Open the Calendar app at the event's start: `calshow:<start.timeIntervalSinceReferenceDate>` |
-| ASK | **Add** | `CalendarService.add(proposal)`. On success, **post an ADDED notification** (with Undo) and send feedback `added`. On failure, post the "Couldn't add" notification (§7) and send feedback `failed`. |
-| ASK | **Edit** (foreground) | Open the app → present `EKEventEditViewController` pre-filled. If saved, feedback `edited`. |
-| ASK | **Dismiss** (destructive), or the notification is cleared | Feedback `dismissed`, log "✖ Dismissed" |
-| Any | Tap on the body | Open the app's Activity screen, scrolled to that item |
+| ADDED notification, or Home **Undo** | Undo | Delete the event, remove the notification, feed UNDONE, feedback `undone` |
+| ADDED notification | **Open** (foreground) | Open Calendar at the event's start: `calshow:<start.timeIntervalSinceReferenceDate>` |
+| ASK notification, or Home **Review → Add** | Add | `CalendarService.insert`. On success, **post an ADDED notification** (same id, so it replaces ASK), feed EXECUTED, feedback `added`. Without full access: from Home, open the pre-filled editor; from the notification, post "Couldn't add" (tap → editor) and send feedback `failed`. |
+| ASK notification, or Home **Review → Edit** | Edit | Present `EKEventEditViewController` pre-filled. If saved: feed EXECUTED, feedback `edited`. |
+| ASK notification (**Dismiss**, or cleared), or Home **Review → Dismiss** | Dismiss | Feed DISMISSED, feedback `dismissed` |
 
 **Rule: after anything is added to the calendar, the user always gets a notification saying so, with Undo.**
 
@@ -270,24 +276,18 @@ Notification button handlers:
 
 ## 4. Getting screenshots on iOS
 
-iOS has **no** API to run code when a screenshot is taken, and **no** "screenshots folder" permission. See the README platform notes. Implement these paths, in priority order:
+iOS has **no** API to run code when a screenshot is taken, and **no** "screenshots folder" permission. Android uses a foreground service that reacts instantly; iOS combines these paths (all implemented):
 
-1. **Scan on foreground (core).** When the app becomes active (`scenePhase == .active`) and at launch, fetch new screenshots:
-   ```swift
-   let opts = PHFetchOptions()
-   opts.predicate = NSPredicate(format: "(mediaSubtypes & %d) != 0 AND creationDate > %@",
-                                PHAssetMediaSubtype.photoScreenshot.rawValue, lastScanDate as NSDate)
-   opts.sortDescriptors = [NSSortDescriptor(key: "creationDate", ascending: true)]
-   let assets = PHAsset.fetchAssets(with: .image, options: opts)
-   ```
-   Process them **sequentially**. On first run set `lastScanDate = now`, so the user's existing backlog is **not** processed. Advance `lastScanDate` to each asset's `creationDate` only after its request completes, and send failures to the retry queue.
-2. **Live while open (core).** Register a `PHPhotoLibraryChangeObserver`. When the library changes while the app is running, run the same scan. This is the smoothest demo: screenshot, switch back to Snapsort, and the notifications appear.
-3. **Background refresh (core).** Register `BGAppRefreshTask` id `com.snapsort.refresh`, schedule it with `earliestBeginDate = now + 15 min` after every run, and run the same scan inside. iOS decides when it actually runs (it may be hours). The ~30 s budget is too short for the real model, so in background mode **upload at most 1 screenshot per run**, and call `setTaskCompleted` before expiry.
-4. **Manual pick (core).** A "Check a screenshot" button with `PhotosPicker` (filter `.screenshots`). Uses `captured_at` = the asset's creation date if available, else now. Also needed for the demo fallback.
-5. *Stretch:* **Share Extension**, so the user can share from the screenshot preview. It writes the image and date into an App Group container; the main app processes it on next launch.
-6. *Stretch:* **App Intent** "Check latest screenshot", usable from Shortcuts or Back Tap.
+1. **Scan on foreground.** When the app becomes active, fetch screenshots created after the cursor (`mediaSubtypes & .photoScreenshot`), oldest first. On the first start, set the cursor to now so the backlog is **not** processed. Found screenshots go into the **retry queue** first, then are processed sequentially. A failure keeps the screenshot queued, and it's dropped after 3 attempts.
+2. **Live while open.** `PHPhotoLibraryChangeObserver`, debounced 1.5 s, runs the same scan. Demo: take a screenshot, switch back to later.exe, and the notification appears.
+3. **Background refresh.** `BGAppRefreshTask` `com.snapsort.refresh`, rescheduled for +15 min after every run. At most **1 screenshot per run**, because the budget is about 30 s. iOS decides when it actually runs.
+4. **App Intents (instant capture).**
+   - **"Snapsort a screenshot"** takes an image. The user builds a Shortcut **Take Screenshot → Snapsort a screenshot** and binds it to **Back Tap** (Settings → Accessibility → Touch → Back Tap) or the **Action Button**. One gesture captures and processes without opening the app. The same intent receives images from the **share sheet** via Shortcuts, which matches Android's share-to-Snapsort.
+   - **"Check latest screenshot"** processes the newest screenshot. It's exposed through `AppShortcutsProvider` (Siri, Spotlight, Shortcuts).
+5. **Manual pick.** Settings → *Test with an image from Photos* (`PhotosPicker`). `captured_at` = now.
+6. *Stretch:* a dedicated Share Extension target (needs App Groups and signing). The intent above already covers the share sheet.
 
-**Photos permission:** request `.readWrite` via `PHPhotoLibrary.requestAuthorization(for: .readWrite)`. If the result is `.limited`, show a blocking explanation card: *"Snapsort needs Full Access to see new screenshots. It only reads screenshots, never your other photos."* with a button to Settings (`UIApplication.openSettingsURLString`).
+**Photos permission:** `.readWrite`. `.limited` is treated as no access, and Settings says so.
 
 ---
 
@@ -364,49 +364,67 @@ Notification content:
 
 ---
 
-## 8. Screens (SwiftUI)
+## 8. Screens (SwiftUI), later.exe "Relay"
 
-Keep it simple: 3 screens in a `TabView`, or a `NavigationStack` with a settings sheet.
+Same design as the Android Compose app (`android/.../ui/home/HomeScreen.kt`, `ui/theme/*`). Dark only.
 
-**A. Onboarding** (first launch, 4 steps, each with one explanation sentence and one button):
-1. Photos: Full Access (§4)
-2. Calendar: Full Access (§6)
-3. Notifications (§7)
-4. Server: base URL + token fields + **Test connection** (calls `/health` and shows the model name or the error)
+**Tokens** (`ios/Snapsort/UI/Theme.swift`):
 
-**B. Activity (home)**
-- Top: status card showing "Watching screenshots ✓", the last scan time, the backend model name, and a **Scan now** button.
-- A **Check a screenshot** button (`PhotosPicker`).
-- An in-progress row while uploading: "Reading your screenshot… 23s", with a live timer, because the real model is slow.
-- A list of the last 50 entries, newest first:
-  - `✅ Added: {title} ({when})`, with an Undo swipe action if still undoable
-  - `❓ Asked: {title} ({when})` with Add / Dismiss buttons inline, so pending asks can also be answered in the app
-  - `✖ Dismissed`, `↩ Undone`, `⏭ Skipped: {skipped_reason}`, `❌ {error}`
-  - Tap → detail: all payload fields, confidence, evidence and notes, plus latency
+| Token | Hex | Use |
+|---|---|---|
+| background | `#0D100B` | Screen background |
+| surface | `#171B15` | Status strip, cards, rows |
+| textPrimary | `#F1F1E8` | Titles; Review button fill |
+| textMuted | `#A2AA9B` | Supporting text, labels |
+| border | `#2B3228` | 1 pt borders, dividers, INACTIVE accent |
+| green | `#2DFF60` | LIVE/WORKING, EXECUTED, Undo |
+| lime | `#80ED28` | Brand mark, ".exe" |
+| amber | `#E7C17D` | NEEDS INPUT, FAILED, RETRYING |
 
-**C. Settings:** base URL, token, Test connection, permission status rows (each with a "Fix" button → Settings app), "Reset scan position to now", "Clear activity log".
+Type: headline 26 semibold · titleLarge 20 semibold · titleMedium 17 semibold · bodyLarge 16 · bodyMedium 14 · labelLarge mono 13 semibold (+0.5 tracking) · labelMedium mono 11 medium (+0.8 tracking). Monospace is only for status labels, timestamps and the wordmark. The horizontal gutter is 20 pt.
 
-Design: system fonts and colors, and support Dark Mode. No custom design system is needed.
+**A. Home** (top to bottom):
+1. **Brand header:** geometric mark (an L stroke plus a square, lime) + "later" + ".exe" (lime), and a "•••" button that opens Settings.
+2. **Agent status strip:** a surface row with a 3 pt accent bar. Primary text + "● LABEL", secondary text below.
+   - Priority order: processing → `WORKING` "Reading screenshot"; last error → `RETRYING` "Server unavailable" + the error; scanning on → `LIVE` "Watching screenshots" / "Last scan · 2 min ago"; else `INACTIVE` "Screenshot monitoring stopped" / "Open Settings to resume".
+3. **Summary:** "Nothing needs you." / "Just 1 thing for you." / "Just N things for you." + "The agent is handling things quietly." / "…the rest."
+4. **Processing row** while uploading: "· READING  Screenshot detected / Understanding action…  12s" (live seconds).
+5. **NEEDS YOUR INPUT  0N:** a card per `ask` item: "! NEEDS INPUT" + timestamp, title, summary, event time, destination chip, and a full-width **Review details →** button that opens the Review sheet.
+6. **RECENT ACTIVITY  TODAY:** newest first. Each row has a status label (✓ EXECUTED, ↩ UNDONE, × DISMISSED, SKIPPED, ! FAILED), timestamp, title, summary, event time, destination chip, inline **Undo** (only if EXECUTED and an event id exists), and a 1 pt divider.
+- Pull to refresh runs a scan. Home re-renders every second so the relative times stay live.
+- Home is built from the activity feed by `HomeUiState.make` (iOS), the same mapping as `Store.toHomeUiState` (Android).
+
+**B. Review sheet:** title, when, where, link, details, confidence, the evidence quote and "why it asked" (notes), plus **Add to calendar / Edit before adding / Dismiss**.
+
+**C. Settings** (from "•••"): back; server URL + API token + **Save & test connection** (shows the model name or the error); Watcher: **Start watching** (asks for Photos, Calendar and Notifications) / **Stop watching** / **Scan now**; **Test with an image from Photos**; permission status rows + Open iOS Settings; Back Tap instructions; activity log (last 30 lines); Reset scan position; Clear activity.
+
+First launch requests the three permissions and starts watching (Android does this on "Start watching").
 
 ---
 
-## 9. Local persistence (UserDefaults / small JSON files)
+## 9. Local persistence
 
-| Key | Type | Purpose |
-|---|---|---|
-| `serverURL` | String | Default `http://localhost:8000` |
-| `apiToken` | String | Default `""` |
-| `lastScanDate` | Date | Screenshot cursor (§4). Set to now on first run. |
-| `handledProposalIds` | [String] (keep the last 500) | Dedup: the same event from a second screenshot is ignored |
-| `eventIdsByProposal` | [String: String] | For Undo |
-| `retryQueue` | [String] (PHAsset localIdentifiers, max 20) | Screenshots whose upload failed. Retried on the next scan. Drop after 3 attempts. |
-| `activityLog` | [ActivityEntry] (last 50) | For screen B |
+One JSON file, `Application Support/snapsort-state.json` (`Store.swift`):
 
-Store the API token in the **Keychain** if time allows. UserDefaults is acceptable for the hackathon.
+| Field | Purpose |
+|---|---|
+| `serverURL`, `apiToken` | Settings. Default `http://localhost:8000` |
+| `scanningEnabled`, `onboarded` | Watcher on/off; first-launch flow done |
+| `scanCursor` | Screenshot cursor (§4), set to now on first start |
+| `pending` | Retry queue: PHAsset id, original capture time, attempts (max 3) |
+| `handled` | proposal id → EventKit event id. Dedup: the same event from a second screenshot is ignored. Kept after Undo. |
+| `activities` | Home feed, last 30. Each record keeps its proposal, so Home can confirm or undo later. |
+| `log`, `lastError`, `lastScanAt` | Settings log; OFFLINE status; "Last scan" |
+
+Calendar dedup also survives a crash between the write and the save: every event's `url` is `snapsort://proposal/<id>`, and `insert` looks for it first (Android uses `CUSTOM_APP_URI` the same way).
+
+Store the API token in the **Keychain** if time allows.
 
 ---
 
 ## 10. Info.plist & capabilities
+
+Also `NSCalendarsUsageDescription` (same text as full access).
 
 | Key | Value |
 |---|---|
@@ -418,30 +436,15 @@ Store the API token in the **Keychain** if time allows. UserDefaults is acceptab
 | `UIBackgroundModes` | `fetch`, `processing` |
 | `BGTaskSchedulerPermittedIdentifiers` | `["com.snapsort.refresh"]` |
 
-Capabilities: Background Modes (Background fetch, Background processing). *Stretch:* App Groups (`group.com.snapsort`) for the Share Extension.
+These are declared in `ios/project.yml` (XcodeGen writes Info.plist). The display name is **later.exe**. Capabilities: Background Modes (Background fetch, Background processing). *Stretch:* App Groups (`group.com.snapsort`) for a Share Extension.
 
 ---
 
-## 11. Suggested project structure
+## 11. Project structure
 
-```
-ios/Snapsort/
-  SnapsortApp.swift            // @main, registers BG task + notification categories, scenePhase → scan
-  Models/API.swift             // §2.4 Codable models
-  Services/APIClient.swift     // health(), analyze(), feedback()
-  Services/ScreenshotScanner.swift  // PhotoKit fetch + change observer + image prep (§4, §5)
-  Services/CalendarService.swift    // EventKit add/remove/edit (§6)
-  Services/NotificationService.swift// categories, post ADDED/ASK, delegate handlers (§7)
-  Services/ProposalHandler.swift    // decision logic (§3)
-  Services/Store.swift              // persistence (§9)
-  Views/OnboardingView.swift
-  Views/ActivityView.swift
-  Views/ActivityDetailView.swift
-  Views/SettingsView.swift
-  Views/EventEditorView.swift       // UIViewControllerRepresentable around EKEventEditViewController
-```
+See [ios/README.md](ios/README.md). `project.yml` (XcodeGen) → `Snapsort` app + `SnapsortTests`. Sources: `Models/` (API, Home models, `HomeState`, sample data), `Services/` (`Agent`, `Store`, `APIClient`, `CalendarService`, `NotificationService`, `ScreenshotScanner`, `BackgroundRefresh`, `LaunchMode`), `Intents/`, `UI/` (Theme, Home, Settings, Review sheet, event editor, root).
 
-Put all decision logic in `ProposalHandler` and keep it free of UIKit/SwiftUI so it can be unit-tested with a fake `CalendarService` and a fake `NotificationService`.
+All decision logic is in `Agent`, and Home is a pure function of stored state. Views never look at confidence.
 
 ---
 
@@ -463,30 +466,36 @@ Accounts or login, cloud sync, receipts/budget, forms/QR codes, editing the back
 
 ## 14. Acceptance checklist (test with `MODEL_PROVIDER=mock`)
 
-- [ ] Onboarding requests all 3 permissions, and Test connection shows `mock`.
-- [ ] Taking a screenshot, then returning to the app, triggers exactly one `/analyze` for it.
-- [ ] Mock call 1 (`auto_add`): the event appears in Calendar **and** an "✅ Added…" notification appears.
-- [ ] Tapping **Undo** from the lock screen, without opening the app, removes the event, and the log shows ↩.
-- [ ] Mock call 2 (`ask`): an "Add “Dinner with Sam”…?" notification appears and **no** event is created yet.
-- [ ] Tapping **Add** creates the event and the notification is replaced by "✅ Added…" with Undo.
-- [ ] Tapping **Edit** opens the pre-filled editor, and saving creates the event.
-- [ ] Tapping **Dismiss** creates nothing, and the log shows ✖.
-- [ ] Mock call 3 (meme): no notification; the log shows `⏭ Skipped: meme`.
-- [ ] With calendar access set to *write-only*, an `auto_add` proposal becomes an ASK notification.
-- [ ] Sending the same screenshot twice gives no duplicate event or notification (dedup by `id`).
-- [ ] With the backend stopped, a screenshot is queued, and it's processed automatically after the backend restarts and the app is reopened.
-- [ ] `/feedback` is called with the right `outcome` for each of the above (check the server log or `evals/results/feedback.jsonl`).
-- [ ] With the real model, the progress row shows elapsed seconds and nothing times out before 240 s.
+CI ([`.github/workflows/ios.yml`](.github/workflows/ios.yml)) checks the ones marked 🤖 on every push, in the Simulator against the real backend.
+
+- [ ] 🤖 Unit tests pass (API decoding, Home mapping, store, retry queue).
+- [ ] 🤖 Every Home state renders (default, processing, offline, inactive, no attention, multiple attention, long title) and matches the Android previews.
+- [ ] 🤖 Mock call 1 (`auto_add`): the event is written to Calendar, Home shows ✓ EXECUTED with Undo, and an "✅ Added…" notification is posted.
+- [ ] 🤖 Mock call 2 (`ask`): Home shows it under NEEDS YOUR INPUT, and **no** event is created yet.
+- [ ] 🤖 Mock call 3 (meme): no notification; Home shows SKIPPED.
+- [ ] 🤖 Review → Add creates the event (EXECUTED); Undo removes it (UNDONE); `/feedback` gets `added`/`undone`.
+- [ ] First launch requests all 3 permissions, and Test connection shows `mock`.
+- [ ] Taking a screenshot and returning to the app triggers exactly one `/analyze`.
+- [ ] Tapping **Undo** from the lock screen, without opening the app, removes the event.
+- [ ] ASK notification **Add** replaces it with "✅ Added…"; **Edit** opens the pre-filled editor; **Dismiss** creates nothing.
+- [ ] With calendar access set to *write-only*, an `auto_add` proposal becomes ASK.
+- [ ] The same screenshot twice gives no duplicate event or notification.
+- [ ] With the backend stopped: Home shows RETRYING, and the screenshot is processed after the backend restarts and the app is reopened.
+- [ ] Back Tap shortcut (Take Screenshot → Snapsort a screenshot) adds an event without opening the app.
+- [ ] With the real model, the processing row counts seconds and nothing times out before 240 s.
 
 ---
 
 ## 15. Parity with Android (`/android`)
 
-| Behaviour | Android (done) | iOS (this spec) |
+| Behaviour | Android | iOS |
 |---|---|---|
-| Detect screenshot | Background service, instant | Scan on open / while open / background refresh |
-| Progress | "Reading your screenshot…" notification | In-app progress row |
-| `auto_add` | Writes via CalendarContract → "✅ Added" + Undo/Open | Writes via EventKit → "✅ Added" + Undo/Open |
-| `ask` | "Add …?" + Add/Edit/Dismiss | Same |
-| No calendar permission | Falls back to ask + calendar screen | Same |
+| Home / Settings UI | Compose, Relay theme | SwiftUI, same tokens and layout |
+| Detect screenshot | Foreground service, instant | Scan on open, while open, background refresh; **Back Tap / Action Button via App Intent** for instant |
+| Share a screenshot to the app | Share target | Shortcuts share sheet → "Snapsort a screenshot" |
+| Progress | "Reading your screenshot…" notification + Home row | Home row (no progress notification) |
+| `auto_add` | CalendarContract → "✅ Added" + Undo/Open | EventKit → "✅ Added" + Undo/Open |
+| `ask` | Notification Add/Edit/Dismiss + Home Review | Same; Review opens a detail sheet |
+| No calendar permission | Falls back to ask + calendar editor | Same (`EKEventEditViewController`) |
+| Retry queue / dedup | Pending screenshots, `CUSTOM_APP_URI` marker | Pending PHAssets, `snapsort://proposal/<id>` event URL |
 | Feedback | `POST /feedback`, `platform: android` | `POST /feedback`, `platform: ios` |
