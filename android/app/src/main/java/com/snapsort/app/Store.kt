@@ -10,7 +10,7 @@ class Store(context: Context) {
     private val prefs = context.getSharedPreferences("snapsort", Context.MODE_PRIVATE)
 
     var serverUrl: String
-        get() = prefs.getString("server_url", "http://192.168.43.1:8000")!!
+        get() = prefs.getString("server_url", "http://127.0.0.1:8000")!! // via `adb reverse tcp:8000 tcp:8000` (USB phone or emulator)
         set(v) = prefs.edit().putString("server_url", v.trimEnd('/')).apply()
 
     var apiToken: String

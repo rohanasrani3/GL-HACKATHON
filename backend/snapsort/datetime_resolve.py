@@ -81,6 +81,40 @@ def resolve_date(date_text: Optional[str], date_guess: Optional[str], anchor: da
     return ResolvedDate(None, notes + ["no_date"], penalty=1.0)
 
 
+_DASH = r"\s*(?:-|–|—|to|until|till)\s*"
+_YEAR = r"(?:,?\s+(\d{4}))?"
+_MONTH = r"([A-Za-z]{3,9})\.?"
+_RANGE_PATTERNS = [
+    # 12 - 16 October 2026 · 12–16 Oct
+    (re.compile(rf"(\d{{1,2}}){_DASH}(\d{{1,2}})\s+{_MONTH}{_YEAR}", re.I), lambda m: (f"{m[1]} {m[3]}", f"{m[2]} {m[3]}", m[4])),
+    # October 12-16, 2026 · Oct 12–16
+    (re.compile(rf"{_MONTH}\s+(\d{{1,2}}){_DASH}(\d{{1,2}}){_YEAR}", re.I), lambda m: (f"{m[2]} {m[1]}", f"{m[3]} {m[1]}", m[4])),
+    # 30 Sep - 2 Oct 2026
+    (re.compile(rf"(\d{{1,2}})\s+{_MONTH}{_DASH}(\d{{1,2}})\s+{_MONTH}{_YEAR}", re.I), lambda m: (f"{m[1]} {m[2]}", f"{m[3]} {m[4]}", m[5])),
+    # Sep 30 - Oct 2, 2026
+    (re.compile(rf"{_MONTH}\s+(\d{{1,2}}){_DASH}{_MONTH}\s+(\d{{1,2}}){_YEAR}", re.I), lambda m: (f"{m[2]} {m[1]}", f"{m[4]} {m[3]}", m[5])),
+]
+
+
+def split_range(text: Optional[str]) -> Optional[tuple[str, str]]:
+    """'12 - 16 October 2026 (Monday - Friday)' -> ('12 October 2026', '16 October 2026'). None if not a range."""
+    if not text:
+        return None
+    cleaned = re.sub(r"\([^)]*\)", " ", text)  # drop "(Monday - Friday)"
+    cleaned = re.sub(r"(\d+)(st|nd|rd|th)\b", r"\1", cleaned)
+    for pattern, build in _RANGE_PATTERNS:
+        m = pattern.search(cleaned)
+        if not m:
+            continue
+        start, end, year = build(m)
+        if not all(dateparser.parse(p, languages=["en"]) for p in (start, end)):
+            continue  # "12-16 Things" isn't a month
+        if year:
+            start, end = f"{start} {year}", f"{end} {year}"
+        return start, end
+    return None
+
+
 def parse_hhmm(value: Optional[str]) -> Optional[time]:
     if not value:
         return None

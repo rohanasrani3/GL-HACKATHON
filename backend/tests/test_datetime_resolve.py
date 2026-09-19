@@ -58,3 +58,26 @@ def test_parse_hhmm():
     assert parse_hhmm("16:30") == time(16, 30)
     assert parse_hhmm("4pm") is None
     assert parse_hhmm("25:00") is None
+
+
+# ---- date ranges ----
+from snapsort.datetime_resolve import split_range  # noqa: E402
+
+
+def test_split_range_day_first():
+    assert split_range("12 - 16 October 2026 (Monday - Friday)") == ("12 October 2026", "16 October 2026")
+
+
+def test_split_range_month_first():
+    assert split_range("Oct 12–16, 2026") == ("12 Oct 2026", "16 Oct 2026")
+
+
+def test_split_range_across_months():
+    assert split_range("30 Sep - 2 Oct") == ("30 Sep", "2 Oct")
+    assert split_range("Sep 30 to Oct 2 2026") == ("30 Sep 2026", "2 Oct 2026")
+
+
+def test_split_range_not_a_range():
+    assert split_range("20 Sept 2026 (Sun)") is None
+    assert split_range("Room 12-16 Building") is None
+    assert split_range(None) is None

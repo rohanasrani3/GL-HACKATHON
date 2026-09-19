@@ -11,7 +11,7 @@ from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
 from PIL import Image
 
 from .config import settings
-from .datetime_resolve import DEFAULT_DURATION, parse_hhmm, resolve_date
+from .datetime_resolve import DEFAULT_DURATION, parse_hhmm, resolve_date, split_range
 from .models import ModelClient
 from .schema import AnalyzeResponse, CalendarPayload, Extraction, Location, Proposal, RawEvent
 
@@ -41,30 +41,71 @@ def build_user_prompt(captured_at: datetime, locale: str) -> str:
 
 
 # Signals that the event is unclear even when the model sounds sure: always ask first.
-UNCLEAR_NOTES = ("parser_model_disagree", "model_guess_only", "no_time_all_day")
+UNCLEAR_NOTES = ("parser_model_disagree", "model_guess_only", "no_time_all_day", "range_ignored")
+MAX_RANGE_DAYS = 31  # longer "events" are usually misreads (or semesters nobody wants as one block)
 
 
 def decide(confidence: float, notes: list[str]) -> str:
     """Policy gate (CLAUDE.md §2.5): add automatically only when confident *and* nothing is unclear."""
-    if confidence >= settings.auto_add_threshold and not any(n.startswith(UNCLEAR_NOTES) for n in notes):
+    if confidence >= settings.auto_add_threshold and not any(u in n for n in notes for u in UNCLEAR_NOTES):
         return "auto_add"
     return "ask"
+
+
+def resolve_end_date(ev: RawEvent, range_end_text: Optional[str], start_date, captured_at: datetime, locale: str, notes: list[str]):
+    """Last day of a multi-day event, or None for single-day events."""
+    end_text = ev.end_date_text or range_end_text
+    if not end_text and not ev.end_date_guess:
+        return None, 0.0
+    r = resolve_date(end_text, ev.end_date_guess, captured_at, locale)
+    notes += [f"end:{n}" for n in r.notes]
+    end = r.value
+    if end is None or end == start_date:
+        return None, 0.0
+    if end < start_date:
+        try:
+            end = end.replace(year=end.year + 1)  # "28 Dec - 2 Jan"
+        except ValueError:
+            end = None
+    if end is None or (end - start_date).days > MAX_RANGE_DAYS:
+        notes.append("range_ignored")
+        return None, 0.1
+    return end, r.penalty / 2
 
 
 def to_proposal(ev: RawEvent, genre: str, captured_at: datetime, tz: ZoneInfo, locale: str) -> Optional[Proposal]:
     notes: list[str] = []
     confidence = max(0.0, min(1.0, ev.confidence))
 
-    resolved = resolve_date(ev.date_text, ev.date_guess, captured_at, locale)
+    # "12 - 16 October 2026" in date_text: split it ourselves, even if the model didn't.
+    rng = split_range(ev.date_text) or split_range(ev.end_date_text)
+    start_text = rng[0] if rng else ev.date_text
+
+    resolved = resolve_date(start_text, ev.date_guess, captured_at, locale)
     notes += resolved.notes
     confidence -= resolved.penalty
     if resolved.value is None:
         return None
 
+    end_date, end_penalty = resolve_end_date(ev, rng[1] if rng else None, resolved.value, captured_at, locale, notes)
+    confidence -= end_penalty
+
     start_t = parse_hhmm(ev.start_time)
     end_t = parse_hhmm(ev.end_time)
+    description = ev.description
 
-    if start_t is None:
+    if end_date is not None:
+        # Multi-day: one all-day event across the whole range. Daily hours go in the description,
+        # so the calendar doesn't show one block running through the nights.
+        all_day = True
+        start_s = resolved.value.isoformat()
+        end_s = (end_date + timedelta(days=1)).isoformat()  # exclusive
+        notes.append(f"multi_day({(end_date - resolved.value).days + 1}d)")
+        if start_t:
+            hours = f"Daily {start_t:%H:%M}" + (f"–{end_t:%H:%M}" if end_t else "")
+            description = f"{hours}. {description}" if description else hours
+        event_end = datetime.combine(end_date + timedelta(days=1), datetime.min.time(), tz)
+    elif start_t is None:
         # No time: all-day event (deadlines, festivals). Slightly less sure.
         all_day = True
         start_s = resolved.value.isoformat()
@@ -100,7 +141,7 @@ def to_proposal(ev: RawEvent, genre: str, captured_at: datetime, tz: ZoneInfo, l
             all_day=all_day,
             timezone=str(tz),
             location=Location(name=ev.location, online_url=ev.online_url),
-            description=ev.description,
+            description=description,
         ),
         confidence=confidence,
         evidence=ev.evidence,
