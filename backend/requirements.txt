@@ -8,3 +8,5 @@ pillow>=10.4
 tzdata>=2024.1
 anthropic>=0.60
 pytest>=8.3
+zxing-cpp>=2.2
+qrcode>=7.4  # test fixtures only

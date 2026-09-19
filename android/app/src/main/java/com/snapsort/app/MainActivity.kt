@@ -44,6 +44,11 @@ class MainActivity : ComponentActivity() {
     private val serverUrlField = mutableStateOf("")
     private val apiTokenField = mutableStateOf("")
 
+    // v3 form autofill. Values live here and in Profile, never on the backend (CLAUDE.md §4.3).
+    private val activeForm = mutableStateOf<FormPrefill?>(null)
+    private val formValues = mutableStateOf<Map<String, String>>(emptyMap())
+    private val formAutofilled = mutableStateOf<Set<String>>(emptySet())
+
     private val permissions = buildList {
         add(if (Build.VERSION.SDK_INT >= 33) Manifest.permission.READ_MEDIA_IMAGES else Manifest.permission.READ_EXTERNAL_STORAGE)
         if (Build.VERSION.SDK_INT >= 33) add(Manifest.permission.POST_NOTIFICATIONS)
@@ -89,7 +94,21 @@ class MainActivity : ComponentActivity() {
         )
         setContent {
             LaterRelayTheme {
-                if (showSettings.value) {
+                val form = activeForm.value
+                if (form != null) {
+                    BackHandler { activeForm.value = null }
+                    com.snapsort.app.ui.form.FormScreen(
+                        form = form,
+                        values = formValues.value,
+                        autofilled = formAutofilled.value,
+                        onValueChange = { entryId, v ->
+                            formValues.value = formValues.value + (entryId to v)
+                            formAutofilled.value = formAutofilled.value - entryId // edited by hand now
+                        },
+                        onOpen = { openPrefilledForm(form) },
+                        onBack = { activeForm.value = null },
+                    )
+                } else if (showSettings.value) {
                     BackHandler { showSettings.value = false }
                     SettingsScreen(
                         serverUrl = serverUrlField.value,
@@ -116,6 +135,7 @@ class MainActivity : ComponentActivity() {
         }
 
         handleSharedScreenshot(intent)
+        handleFormIntent(intent)
     }
 
     override fun onResume() {
@@ -132,6 +152,74 @@ class MainActivity : ComponentActivity() {
         super.onNewIntent(intent)
         setIntent(intent)
         handleSharedScreenshot(intent)
+        handleFormIntent(intent)
+    }
+
+    /** Opened from the "Registration form found" notification. */
+    private fun handleFormIntent(intent: Intent?) {
+        if (intent?.action != ACTION_REVIEW_FORM) return
+        val raw = intent.getStringExtra(EXTRA_FORM) ?: return
+        runCatching { FormPrefill.fromJson(raw) }.getOrNull()?.let(::openFormReview)
+    }
+
+    /**
+     * Seed the review screen: known answers come from the local profile, the rest start blank
+     * for the user to supply once (CLAUDE.md §2.8).
+     */
+    private fun openFormReview(form: FormPrefill) {
+        val profile = Profile(this)
+        val seeded = mutableMapOf<String, String>()
+        val fromProfile = mutableSetOf<String>()
+        form.fields.forEach { field ->
+            val stored = field.profileKey?.let { profile[it] }
+            if (!stored.isNullOrBlank()) {
+                seeded[field.entryId] = stored
+                fromProfile += field.entryId
+            }
+        }
+        formValues.value = seeded
+        formAutofilled.value = fromProfile
+        showSettings.value = false
+        activeForm.value = form
+    }
+
+    /**
+     * Save anything new to the profile, then open the pre-filled form in the browser.
+     *
+     * This is where Snapsort stops: the form opens with the answers typed in and the user
+     * presses Submit (CLAUDE.md §4.6).
+     */
+    private fun openPrefilledForm(form: FormPrefill) {
+        val values = formValues.value
+        val profile = Profile(this)
+        val learned = form.fields.mapNotNull { field ->
+            val key = field.profileKey ?: return@mapNotNull null
+            val value = values[field.entryId].orEmpty()
+            if (value.isBlank()) null else key to value
+        }.toMap()
+        if (learned.isNotEmpty()) profile.putAll(learned)
+
+        val url = buildPrefillUrl(form.formUrl, values)
+        store.log("📝 Opened pre-filled form: ${form.domain} (${values.count { it.value.isNotBlank() }} answers)")
+        store.recordActivity(
+            ActivityRecord(
+                id = form.id,
+                title = form.title ?: "Registration form",
+                status = ActivityRecord.EXECUTED,
+                summary = "Pre-filled — submit it yourself",
+                eventTime = form.domain,
+                proposalJson = form.json,
+                kind = ActivityRecord.FORM_KIND,
+            ),
+        )
+        NotificationManagerCompat.from(this).cancel(form.notificationId)
+        activeForm.value = null
+        refresh()
+        try {
+            startActivity(Intent(Intent.ACTION_VIEW, Uri.parse(url)).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK))
+        } catch (e: Exception) {
+            toast("No browser to open the form: ${e.message}")
+        }
     }
 
     private fun refresh() {
@@ -227,6 +315,12 @@ class MainActivity : ComponentActivity() {
     /** Home's Review on a "needs input" item: same path as the notification's Add button. */
     private fun confirm(itemId: String) {
         val record = store.activity(itemId)
+        // Forms open the review screen instead of writing anything (CLAUDE.md §4.6).
+        if (record?.kind == ActivityRecord.FORM_KIND) {
+            val form = record.proposalJson?.let { runCatching { FormPrefill.fromJson(it) }.getOrNull() }
+            if (form == null) toast("Could not read that form") else openFormReview(form)
+            return
+        }
         val json = record?.proposalJson
         if (record == null || json == null) {
             toast("This item can no longer be confirmed")
@@ -257,4 +351,9 @@ class MainActivity : ComponentActivity() {
     }
 
     private fun toast(message: String) = Toast.makeText(this, message, Toast.LENGTH_LONG).show()
+
+    companion object {
+        const val ACTION_REVIEW_FORM = "com.snapsort.app.REVIEW_FORM"
+        const val EXTRA_FORM = "form"
+    }
 }

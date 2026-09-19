@@ -57,7 +57,12 @@ data class Proposal(
     }
 }
 
-data class AnalyzeResult(val proposals: List<Proposal>, val skippedReason: String?, val latencyMs: Int)
+data class AnalyzeResult(
+    val proposals: List<Proposal>,
+    val skippedReason: String?,
+    val latencyMs: Int,
+    val forms: List<FormPrefill> = emptyList(),
+)
 
 /**
  * Feed entry for this proposal. Keeps the raw JSON so Home can still Undo or confirm it later
@@ -125,7 +130,12 @@ class Uploader(private val context: Context, private val store: Store) {
     private fun parse(json: JSONObject): AnalyzeResult {
         val arr = json.getJSONArray("proposals")
         val proposals = (0 until arr.length()).map { Proposal.fromJson(arr.getJSONObject(it).toString()) }
-        return AnalyzeResult(proposals, json.optStringOrNull("skipped_reason"), json.optInt("latency_ms"))
+        // `forms` is absent on older backends, so this stays optional.
+        val formsArr = json.optJSONArray("forms")
+        val forms = (0 until (formsArr?.length() ?: 0)).mapNotNull { i ->
+            runCatching { FormPrefill.fromJson(formsArr!!.getJSONObject(i).toString()) }.getOrNull()
+        }
+        return AnalyzeResult(proposals, json.optStringOrNull("skipped_reason"), json.optInt("latency_ms"), forms)
     }
 
     /** Tell the backend what the user did (ids + outcome only). Best-effort: never throws. */

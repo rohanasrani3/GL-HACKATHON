@@ -11,6 +11,7 @@ import com.snapsort.app.Store
  */
 
 private val CALENDAR = ToolDestination(label = "Google Calendar", symbol = "G")
+private val FORM = ToolDestination(label = "Google Forms", symbol = "≡")
 
 /** Statuses that belong in the "needs input" section rather than the receipt list. */
 private const val ATTENTION = ActivityRecord.NEEDS_ATTENTION
@@ -69,7 +70,11 @@ private fun ActivityRecord.toItem(now: Long) = ActivityItem(
     id = id,
     title = title,
     status = runCatching { ActivityStatus.valueOf(status) }.getOrDefault(ActivityStatus.EXECUTED),
-    destination = if (status == ActivityRecord.EXECUTED || status == ActivityRecord.NEEDS_ATTENTION) CALENDAR else null,
+    destination = when {
+        kind == ActivityRecord.FORM_KIND -> FORM
+        status == ActivityRecord.EXECUTED || status == ActivityRecord.NEEDS_ATTENTION -> CALENDAR
+        else -> null
+    },
     summary = summary,
     eventTime = eventTime,
     activityTimestamp = relativeLabel(now - timestamp),

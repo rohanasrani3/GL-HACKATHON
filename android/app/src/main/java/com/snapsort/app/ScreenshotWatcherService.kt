@@ -171,6 +171,27 @@ class ScreenshotWatcherService : Service() {
                         store.recordActivity(p.toActivity(ActivityRecord.NEEDS_ATTENTION, "Needs your confirmation"))
                     }
                 }
+                // v3 form autofill. Nothing is opened or filled here: the user reviews first
+                // and presses Submit themselves (CLAUDE.md §4.6).
+                val profile = Profile(ctx)
+                for (f in result.forms) {
+                    val missing = f.fields.count { field ->
+                        field.profileKey == null || profile[field.profileKey] == null
+                    }
+                    Notifier.showForm(ctx, f, missing)
+                    store.log("📝 Form found: ${f.domain} · ${f.fields.size} questions, $missing to fill")
+                    store.recordActivity(
+                        ActivityRecord(
+                            id = f.id,
+                            title = f.title ?: "Registration form",
+                            status = ActivityRecord.NEEDS_ATTENTION,
+                            summary = if (missing > 0) "$missing answers needed" else "Ready to pre-fill",
+                            eventTime = f.domain,
+                            proposalJson = f.json,
+                            kind = ActivityRecord.FORM_KIND,
+                        ),
+                    )
+                }
                 store.completeScreenshot(uri)
             } catch (e: Exception) {
                 Log.w("Snapsort", "analyze failed", e)

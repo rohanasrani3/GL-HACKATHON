@@ -12,10 +12,24 @@ from PIL import Image
 
 from .config import settings
 from .datetime_resolve import DEFAULT_DURATION, parse_hhmm, resolve_date, split_range
+from .forms import looks_like_form, qr_urls, resolve_google_form
 from .models import ModelClient
-from .schema import AnalyzeResponse, CalendarPayload, Extraction, Location, Proposal, RawEvent
+from .schema import (
+    AnalyzeResponse,
+    CalendarPayload,
+    Extraction,
+    FormProposal,
+    Location,
+    Proposal,
+    RawEvent,
+)
 
-SKILL_PROMPT = (Path(__file__).parent / "skills" / "calendar_event" / "SKILL.md").read_text(encoding="utf-8")
+_SKILLS = Path(__file__).parent / "skills"
+# One model call serves both skills; each still owns its own prompt file (CLAUDE.md §5, D2).
+SKILL_PROMPT = "\n\n".join(
+    (_SKILLS / name / "SKILL.md").read_text(encoding="utf-8")
+    for name in ("calendar_event", "form_fill")
+)
 
 
 class InvalidInputError(ValueError):
@@ -152,6 +166,37 @@ def to_proposal(ev: RawEvent, genre: str, captured_at: datetime, tz: ZoneInfo, l
     )
 
 
+def form_url_from_image(image_bytes: bytes) -> Optional[str]:
+    """A form link taken from a QR code, which is exact, unlike OCR of a 44-character form id."""
+    try:
+        with Image.open(io.BytesIO(image_bytes)) as im:
+            for url in qr_urls(im.convert("RGB")):
+                if looks_like_form(url):
+                    return url
+    except Exception:  # noqa: BLE001 - QR decoding is best-effort, never fatal
+        return None
+    return None
+
+
+async def to_form_proposal(url: str, source: str) -> Optional[FormProposal]:
+    """Resolve a reported link into a proposal. The fields come from the real form, not the model.
+
+    Always `decision="ask"`: opening a pre-filled form is one step from submitting it, so it never
+    happens without the user (CLAUDE.md §4.6, D8).
+    """
+    payload = await resolve_google_form(url)
+    if payload is None:
+        return None
+    known = sum(1 for f in payload.fields if f.profile_key)
+    return FormProposal(
+        id=hashlib.sha1(payload.form_url.encode()).hexdigest()[:12],
+        payload=payload,
+        confidence=1.0,  # read from the live form, so the field ids are facts, not predictions
+        evidence=url,
+        notes=[f"source:{source}", f"fields:{len(payload.fields)}", f"profile_known:{known}"],
+    )
+
+
 async def analyze(
     client: ModelClient,
     image_bytes: bytes,
@@ -174,6 +219,23 @@ async def analyze(
         raise InvalidInputError("invalid or corrupt image") from e
     extraction: Extraction = await client.extract(image_b64, SKILL_PROMPT, build_user_prompt(captured_at, locale))
 
+    # A screenshot can hold a form and no event at all, so this is independent of `actionable`.
+    # Sensitive screenshots are still dropped outright (CLAUDE.md §4.5).
+    forms: list[FormProposal] = []
+    form_error: Optional[str] = None
+    # A QR code beats the model's reading of the same link: the id is 44 random characters and
+    # one misread character 404s the fetch.
+    qr_url = form_url_from_image(image_bytes)
+    candidate = qr_url or extraction.form_url
+    if not extraction.sensitive and looks_like_form(candidate):
+        form = await to_form_proposal(candidate, source="qr" if qr_url else "ocr")
+        if form:
+            forms.append(form)
+        else:
+            # Seen but unresolvable, almost always a misread URL. Say so instead of returning
+            # nothing and looking like the feature simply didn't fire.
+            form_error = "form_link_unreadable"
+
     proposals: list[Proposal] = []
     seen_ids: set[str] = set()
     skipped = extraction.skipped_reason
@@ -190,8 +252,9 @@ async def analyze(
 
     return AnalyzeResponse(
         proposals=proposals,
+        forms=forms,
         genre=extraction.genre,
-        skipped_reason=None if proposals else (skipped or "not_actionable"),
+        skipped_reason=None if (proposals or forms) else (skipped or form_error or "not_actionable"),
         model=client.name,
         latency_ms=int((clock.perf_counter() - t0) * 1000),
     )

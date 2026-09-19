@@ -21,6 +21,8 @@ data class ActivityRecord(
     val timestamp: Long = System.currentTimeMillis(),
     val eventId: Long? = null,
     val proposalJson: String? = null,
+    /** "calendar" or "form" — decides the destination chip and what Review does. */
+    val kind: String = CALENDAR_KIND,
 ) {
     fun toJson(): JSONObject = JSONObject()
         .put("id", id)
@@ -31,6 +33,7 @@ data class ActivityRecord(
         .put("timestamp", timestamp)
         .put("eventId", eventId ?: JSONObject.NULL)
         .put("proposalJson", proposalJson ?: JSONObject.NULL)
+        .put("kind", kind)
 
     companion object {
         fun fromJson(o: JSONObject) = ActivityRecord(
@@ -42,7 +45,11 @@ data class ActivityRecord(
             timestamp = o.optLong("timestamp"),
             eventId = if (o.isNull("eventId")) null else o.getLong("eventId"),
             proposalJson = o.optStringOrNull("proposalJson"),
+            kind = o.optString("kind", CALENDAR_KIND).ifBlank { CALENDAR_KIND },
         )
+
+        const val CALENDAR_KIND = "calendar"
+        const val FORM_KIND = "form"
 
         // Status values mirror com.snapsort.app.home.ActivityStatus, kept as plain strings so
         // this storage layer stays free of UI types.
