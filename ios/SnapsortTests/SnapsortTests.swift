@@ -1,3 +1,5 @@
+import CoreImage.CIFilterBuiltins
+import UIKit
 import XCTest
 @testable import Snapsort
 
@@ -228,5 +230,48 @@ final class FormTests: XCTestCase {
             .replacingOccurrences(of: "\"all_day\": false", with: "\"all_day\": true")
         let p = try JSONDecoder.api.decode(AnalyzeResponse.self, from: Data(json.utf8)).proposals[0]
         XCTAssertEqual(p.prettyWhen, "Mon 12 – Fri 16 Oct")
+    }
+}
+
+
+final class QRDemoFormTests: XCTestCase {
+    /// A phone-sized "poster" with the QR code in one corner, encoded as JPEG like the upload path.
+    private func posterJPEG(qr text: String) throws -> Data {
+        let filter = CIFilter.qrCodeGenerator()
+        filter.message = Data(text.utf8)
+        let code = try XCTUnwrap(filter.outputImage).transformed(by: CGAffineTransform(scaleX: 12, y: 12))
+        let cg = try XCTUnwrap(CIContext().createCGImage(code, from: code.extent))
+        let size = CGSize(width: 1080, height: 1600)
+        let format = UIGraphicsImageRendererFormat()
+        format.scale = 1
+        let poster = UIGraphicsImageRenderer(size: size, format: format).image { ctx in
+            UIColor.white.setFill()
+            ctx.fill(CGRect(origin: .zero, size: size))
+            UIImage(cgImage: cg).draw(in: CGRect(x: 600, y: 1100, width: 400, height: 400))
+        }
+        return try XCTUnwrap(ImagePrep.jpeg(from: poster))
+    }
+
+    func testDecodesTheHardcodedQRAndMatchesTheForm() throws {
+        let urls = QRCodes.urls(in: try posterJPEG(qr: "https://qrto.org/fNWFrg"))
+        XCTAssertEqual(urls, ["https://qrto.org/fNWFrg"])
+        let forms = DemoForms.forms(forQR: urls)
+        XCTAssertEqual(forms.map(\.id), ["9bfb46481379"]) // same id the backend would give it
+        XCTAssertEqual(forms.first?.payload.fields.count, 7)
+    }
+
+    func testOtherQRCodesAreIgnored() throws {
+        XCTAssertTrue(DemoForms.forms(forQR: QRCodes.urls(in: try posterJPEG(qr: "https://example.com/menu"))).isEmpty)
+        XCTAssertTrue(QRCodes.urls(in: Data("not an image".utf8)).isEmpty)
+    }
+
+    func testNormalisesTrailingSlashAndCase() {
+        XCTAssertEqual(DemoForms.normalise("http://QRTO.org/fNWFrg/"), "https://qrto.org/fNWFrg")
+    }
+
+    func testPrefilledLinkForTheDemoForm() {
+        let url = DemoForms.revisionDojo.prefillURL(values: ["entry.1046611833": "Ada", "entry.590969671": "Veg"])
+        XCTAssertEqual(url?.absoluteString,
+                       "https://docs.google.com/forms/d/e/1FAIpQLSci6LIaE_RgnJT4es__YrJjFK74nX3MjeKlydf1540OcMPxdg/viewform?usp=pp_url&entry.1046611833=Ada&entry.590969671=Veg")
     }
 }

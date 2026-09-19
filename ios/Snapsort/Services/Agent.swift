@@ -182,7 +182,12 @@ final class Agent: ObservableObject {
             store.update { $0.lastError = nil } // a successful round-trip clears OFFLINE
             let secs = result.latencyMs / 1000
 
-            let forms = result.forms ?? []
+            var forms = result.forms ?? []
+            // Temporary demo hardcode: known QR codes decoded on the phone (see DemoForms).
+            for demo in DemoForms.forms(forQR: QRCodes.urls(in: jpeg)) where !forms.contains(where: { $0.id == demo.id }) {
+                forms.append(demo)
+                store.log("📝 QR matched a known form: \(demo.title)")
+            }
             if result.proposals.isEmpty && forms.isEmpty {
                 let reason = result.skippedReason ?? "nothing found"
                 store.log("⏭ Skipped: \(reason) · \(secs)s")
