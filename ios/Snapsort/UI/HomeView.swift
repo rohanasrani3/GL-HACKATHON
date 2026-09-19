@@ -27,7 +27,9 @@ struct HomeView: View {
                     Spacer().frame(height: 30)
                     SectionHeader(title: "NEEDS YOUR INPUT", trailing: String(format: "%02d", state.needsAttention.count))
                     Spacer().frame(height: 10)
-                    ForEach(state.needsAttention) { item in
+                    // Section-prefixed ids (like Android's LazyColumn keys): an item that moves from
+                    // "needs input" to "recent" must get a fresh view, not a reused card.
+                    ForEach(state.needsAttention, id: \.attentionKey) { item in
                         NeedsInputCard(item: item, onReview: { onReview(item.id) })
                         Spacer().frame(height: 12)
                     }
@@ -36,7 +38,7 @@ struct HomeView: View {
                 if !state.recentActivity.isEmpty {
                     Spacer().frame(height: 22)
                     SectionHeader(title: "RECENT ACTIVITY", trailing: "TODAY")
-                    ForEach(state.recentActivity) { item in
+                    ForEach(state.recentActivity, id: \.recentKey) { item in
                         ActivityReceipt(item: item, onUndo: { onUndo(item.id) })
                     }
                 }
@@ -279,6 +281,11 @@ private struct DestinationLabel: View {
         .accessibilityElement(children: .ignore)
         .accessibilityLabel("Destination: \(destination.label)")
     }
+}
+
+private extension ActivityItem {
+    var attentionKey: String { "attention-\(id)" }
+    var recentKey: String { "recent-\(id)-\(status.rawValue)" }
 }
 
 func statusPresentation(_ status: ActivityStatus) -> (label: String, color: Color) {
