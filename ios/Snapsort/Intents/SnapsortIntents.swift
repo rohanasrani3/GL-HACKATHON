@@ -13,7 +13,7 @@ struct SnapsortScreenshotIntent: AppIntent {
     static let description = IntentDescription("Reads a screenshot and adds any event it finds to your calendar.")
     static let openAppWhenRun = false
 
-    @Parameter(title: "Screenshot", supportedContentTypes: [.image])
+    @Parameter(title: "Screenshot", supportedTypeIdentifiers: [UTType.image.identifier])
     var screenshot: IntentFile
 
     @MainActor
