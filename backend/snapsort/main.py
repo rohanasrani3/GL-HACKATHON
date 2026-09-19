@@ -3,12 +3,15 @@
 Run:  uvicorn snapsort.main:app --host 0.0.0.0 --port 8000
 """
 import asyncio
+import json
 import logging
 from contextlib import asynccontextmanager
-from datetime import datetime
-from typing import Optional
+from datetime import datetime, timezone as dt_timezone
+from pathlib import Path
+from typing import Literal, Optional
 
 from fastapi import FastAPI, File, Form, Header, HTTPException, UploadFile
+from pydantic import BaseModel
 
 from .config import settings
 from .models import get_client
@@ -37,9 +40,41 @@ async def lifespan(_: FastAPI):
 app = FastAPI(title="Snapsort", lifespan=lifespan)
 
 
+API_VERSION = 1
+FEEDBACK_FILE = Path(__file__).resolve().parents[2] / "evals" / "results" / "feedback.jsonl"
+
+
+def check_token(token: Optional[str]) -> None:
+    if settings.api_token and token != settings.api_token:
+        raise HTTPException(status_code=401, detail="bad token")
+
+
 @app.get("/health")
 async def health():
-    return {"ok": True, "model": client.name}
+    return {
+        "ok": True,
+        "api_version": API_VERSION,
+        "model": client.name,
+        "auto_add_threshold": settings.auto_add_threshold,
+        "ask_threshold": settings.ask_threshold,
+    }
+
+
+class Feedback(BaseModel):
+    proposal_id: str
+    decision: Literal["auto_add", "ask"]
+    outcome: Literal["added", "dismissed", "undone", "edited", "failed"]
+    platform: Literal["ios", "android", "other"] = "other"
+
+
+@app.post("/feedback", status_code=204)
+async def feedback(fb: Feedback, x_api_token: Optional[str] = Header(None)):
+    """What the user did with a proposal. IDs + outcome only, never event content (CLAUDE.md §4)."""
+    check_token(x_api_token)
+    FEEDBACK_FILE.parent.mkdir(parents=True, exist_ok=True)
+    row = fb.model_dump() | {"t": datetime.now(dt_timezone.utc).isoformat()}
+    with FEEDBACK_FILE.open("a", encoding="utf-8") as f:
+        f.write(json.dumps(row) + "\n")
 
 
 @app.post("/analyze", response_model=AnalyzeResponse)
@@ -50,8 +85,7 @@ async def analyze_endpoint(
     locale: str = Form("en-HK"),
     x_api_token: Optional[str] = Header(None),
 ):
-    if settings.api_token and x_api_token != settings.api_token:
-        raise HTTPException(status_code=401, detail="bad token")
+    check_token(x_api_token)
 
     data = await file.read()
     if not data:

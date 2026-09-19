@@ -19,6 +19,10 @@ class ModelClient(Protocol):
 def get_client() -> ModelClient:
     from ..config import settings
 
+    if settings.model_provider == "mock":
+        from .mock_client import MockClient
+
+        return MockClient()
     if settings.model_provider == "claude":
         from .claude_client import ClaudeClient
 

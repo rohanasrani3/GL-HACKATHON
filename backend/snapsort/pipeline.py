@@ -1,5 +1,6 @@
 """Screenshot → proposals. Preprocess image, call the model, resolve dates, score, filter."""
 import base64
+import hashlib
 import io
 import time as clock
 from datetime import datetime, timedelta
@@ -33,6 +34,17 @@ def build_user_prompt(captured_at: datetime, locale: str) -> str:
         f"(timezone {captured_at.tzinfo}, locale {locale}).\n"
         "Find any events in this screenshot and return the JSON."
     )
+
+
+# Signals that the event is unclear even when the model sounds sure: always ask first.
+UNCLEAR_NOTES = ("parser_model_disagree", "model_guess_only", "no_time_all_day")
+
+
+def decide(confidence: float, notes: list[str]) -> str:
+    """Policy gate (CLAUDE.md §2.5): add automatically only when confident *and* nothing is unclear."""
+    if confidence >= settings.auto_add_threshold and not any(n.startswith(UNCLEAR_NOTES) for n in notes):
+        return "auto_add"
+    return "ask"
 
 
 def to_proposal(ev: RawEvent, genre: str, captured_at: datetime, tz: ZoneInfo, locale: str) -> Optional[Proposal]:
@@ -73,7 +85,10 @@ def to_proposal(ev: RawEvent, genre: str, captured_at: datetime, tz: ZoneInfo, l
         notes.append("event_in_past")
         return None
 
+    confidence = round(max(0.0, confidence), 2)
     return Proposal(
+        id=hashlib.sha1(f"{ev.title.strip().lower()}|{start_s}".encode()).hexdigest()[:12],
+        decision=decide(confidence, notes),
         payload=CalendarPayload(
             title=ev.title.strip()[:120],
             start=start_s,
@@ -83,7 +98,7 @@ def to_proposal(ev: RawEvent, genre: str, captured_at: datetime, tz: ZoneInfo, l
             location=Location(name=ev.location, online_url=ev.online_url),
             description=ev.description,
         ),
-        confidence=round(max(0.0, confidence), 2),
+        confidence=confidence,
         evidence=ev.evidence,
         notes=notes,
     )
@@ -110,7 +125,7 @@ async def analyze(
     elif extraction.actionable:
         for ev in extraction.events[:10]:
             p = to_proposal(ev, extraction.genre, captured_at, tz, locale)
-            if p and p.confidence >= settings.min_confidence:
+            if p and p.confidence >= settings.ask_threshold:
                 proposals.append(p)
         if not proposals and not skipped:
             skipped = "no_confident_future_events"

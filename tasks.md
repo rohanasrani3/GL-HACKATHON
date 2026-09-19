@@ -1,13 +1,14 @@
 # tasks.md: Hackathon build tracker
 
-**Goal (10h):** screenshot an event poster/chat → phone notification "Add '<event>' to calendar?" → tap → calendar opens pre-filled.
+**Goal (10h):** screenshot an event → confident events are **added automatically** and the user gets "✅ Added … [Undo]"; unclear ones get "Add '<event>' to calendar? [Add / Edit / Dismiss]" first.
 
 **Hackathon scope** (a deliberate subset of [CLAUDE.md](CLAUDE.md) / [skills.md](skills.md)):
 - Android only, Kotlin. Watcher = foreground service + `ContentObserver` (not WorkManager).
 - No on-device OCR. The phone uploads the image and the backend does triage + extraction in one model call.
 - Backend = FastAPI on the laptop. Model = Gemma 4 via Ollama, with a hosted fallback switch (`MODEL_PROVIDER=claude`).
-- Calendar write = `Intent.ACTION_INSERT` (no calendar permission; user taps Save, which keeps a human in the loop).
-- The policy gate is simplified: backend drops confidence < 0.3, app shows ≥ 0.5.
+- **Policy gate lives in the backend** so Android and iOS behave the same: each proposal carries `decision` = `auto_add` (confidence ≥ 0.8 and nothing unclear) or `ask` (0.5–0.8, or date/time uncertain). Below 0.5 is dropped.
+- Calendar write: `auto_add` writes directly (Android CalendarContract / iOS EventKit), then notifies with **Undo**. `ask` waits for **Add**. Without calendar permission everything falls back to `ask` + the calendar app's editor.
+- iOS app is built by a coworker (with Codex) from [frontend.md](frontend.md).
 - Phone ↔ laptop over phone hotspot or Tailscale.
 
 Legend: `[x]` done · `[~]` in progress · `[ ]` todo · `[!]` blocked / needs decision
@@ -25,7 +26,10 @@ Legend: `[x]` done · `[~]` in progress · `[ ]` todo · `[!]` blocked / needs d
 - [x] `pipeline.py`: preprocess (downscale, strip EXIF), extract, resolve, score, filter past events
 - [x] `main.py`: `POST /analyze`, `GET /health`, model warm-up on start
 - [x] `test.py`: pick any picture and see the raw model output + final proposals
-- [x] Unit tests: 10/10 passing
+- [x] Policy gate: `decision` (`auto_add`/`ask`) + stable proposal `id` on every proposal
+- [x] `POST /feedback` (ids + outcome only → `evals/results/feedback.jsonl`); `/health` returns thresholds + `api_version`
+- [x] `MODEL_PROVIDER=mock`: canned auto_add / ask / skip cycle so frontends can be built without a model
+- [x] Unit + API tests: 21/21 passing
 - [!] **Latency: 34–77s per screenshot** with gemma4:12b (only 8/49 layers fit in 4 GB VRAM). Options:
   1. Pull `gemma4:e2b-it-qat` (4.3 GB) → should fit mostly on GPU. **Needs approval to download.**
   2. `MODEL_PROVIDER=claude` for the live demo (needs an API key).
@@ -41,9 +45,16 @@ Legend: `[x]` done · `[~]` in progress · `[ ]` todo · `[!]` blocked / needs d
 - [x] Gradle project (Kotlin, minSdk 29, targetSdk 35, no XML layouts)
 - [x] `ScreenshotWatcherService`: foreground service + debounced ContentObserver, screenshots-only filter, skips backlog
 - [x] `Uploader`: downscale → JPEG → multipart POST with `captured_at`, timezone, locale
-- [x] `Notifier`: "Reading your screenshot…" progress + "Add '…' to calendar?" with Add → `ACTION_INSERT`
+- [x] `Notifier`: "Reading your screenshot…" progress; **ADDED** ("✅ Added…" + Undo/Open) and **ASK** ("Add…?" + Add/Edit/Dismiss)
+- [x] `CalendarWriter`: direct insert into the primary calendar + delete for Undo
+- [x] `ActionReceiver`: Add / Undo / Dismiss buttons + `/feedback` (no activity trampolines, Android 12+ safe)
 - [x] `MainActivity`: server URL, test connection, start/stop, pick-from-gallery test, share-to-Snapsort, activity log
 - [ ] **Build + install on a real phone in Android Studio** (not compiled yet; no SDK on this laptop)
+
+## Phase 3b: iOS (`/ios`, coworker + Codex)
+- [x] Spec written: [frontend.md](frontend.md) (API contract, Swift models, decision logic, EventKit, notifications, screens, acceptance checklist)
+- [ ] Build against `MODEL_PROVIDER=mock`, pass the frontend.md §14 checklist
+- [ ] Point at the real backend
 
 ## Phase 4: Demo
 - [ ] End-to-end on the real phone and network
@@ -73,3 +84,5 @@ cd backend
 - 17:50: Backend done, 10/10 unit tests pass. Evals 5/5 correct, but latency is 34–77s.
 - 17:55: Added `test.py` (user request). Verified on the chat sample.
 - 18:05: Android app written (5 Kotlin files). Needs building in Android Studio.
+- 18:10: Paused. Resume: (1) decide on model speed (download gemma4:e2b-it-qat / use Claude / bigger GPU), (2) build Android app in Android Studio, (3) end-to-end test. Nothing committed yet.
+- Resumed. New requirements: auto-add confident events and notify afterwards; ask first for unclear ones. Backend now returns `decision` + `id`, has `/feedback` and a mock provider (21/21 tests). Android updated (CalendarWriter, ActionReceiver, new notifications). Wrote frontend.md for the iOS coworker. **Still open:** model speed decision (download gemma4:e2b-it-qat?), Android build in Android Studio.

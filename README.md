@@ -89,25 +89,24 @@ The architecture is designed so that adding a new domain means adding a new **sk
 
 | | Android | iOS |
 |---|---|---|
-| Detect new screenshots | `ContentObserver` on `MediaStore.Images` filtered to the `Screenshots` bucket, or `WorkManager` periodic scan | `PHPhotoLibraryChangeObserver` plus the `PHAssetMediaSubtype.photoScreenshot` filter. Background execution is limited, so processing happens on app open, through `BGProcessingTask`, or through a Shortcuts automation. |
+| Detect new screenshots | `ContentObserver` on `MediaStore.Images` filtered to the `Screenshots` bucket, or `WorkManager` periodic scan | `PHPhotoLibraryChangeObserver` plus the `PHAssetMediaSubtype.photoScreenshot` filter. iOS can't run code when a screenshot is taken, so processing happens on app open, while the app is open, via `BGAppRefreshTask` (timing up to iOS), or from a share extension. |
 | Calendar write | `CalendarContract` or the Google Calendar API | `EventKit` |
 | On-device OCR | ML Kit Text Recognition | Vision `VNRecognizeTextRequest` |
 
 ## Getting started (development)
 
-> The repository is at the design stage. Setup instructions will be added once the first code lands.
-
-Planned layout:
+Hackathon build in progress. See [tasks.md](tasks.md) for status and run instructions.
 
 ```
-/app            mobile client (watcher, notifications, settings UI)
-/agent          orchestrator + skill runtime
-/skills         one folder per skill (calendar-event, receipt-budget, form-autofill, ...)
-/connectors     calendar / budget / form integrations
-/evals          labelled screenshot sets + expected outputs
+/backend        FastAPI + model clients (Gemma via Ollama, Claude, mock) + calendar-event skill
+/android        Kotlin app (screenshot watcher, auto-add / ask notifications)
+/ios            Swift app, built from frontend.md
+/evals          labelled screenshots, expected outputs, eval runner
 ```
 
 ## Documentation
 
 - [CLAUDE.md](CLAUDE.md) covers agent architecture, design decisions and conventions for contributors, including AI coding agents.
 - [skills.md](skills.md) is the skill catalogue: what each skill does, its inputs and outputs, tools and guardrails.
+- [frontend.md](frontend.md) is the iOS app spec and the backend API contract (`/health`, `/analyze`, `/feedback`).
+- [tasks.md](tasks.md) is the hackathon build tracker and how to run everything.

@@ -28,8 +28,12 @@ class Settings:
     claude_model: str = os.getenv("CLAUDE_MODEL", "claude-opus-5")
     api_token: str = os.getenv("API_TOKEN", "")
     default_timezone: str = os.getenv("DEFAULT_TIMEZONE", "Asia/Hong_Kong")
-    # Proposals below this confidence are dropped server-side (the app applies its own, higher threshold).
-    min_confidence: float = float(os.getenv("MIN_CONFIDENCE", "0.3"))
+    # Policy gate (CLAUDE.md §2.5), kept server-side so Android and iOS behave the same:
+    #   confidence >= AUTO_ADD_THRESHOLD      -> decision "auto_add" (app adds it, then notifies with Undo)
+    #   ASK_THRESHOLD <= confidence < AUTO    -> decision "ask"      (app asks before adding)
+    #   confidence < ASK_THRESHOLD            -> dropped, never sent to the app
+    auto_add_threshold: float = float(os.getenv("AUTO_ADD_THRESHOLD", "0.8"))
+    ask_threshold: float = float(os.getenv("ASK_THRESHOLD", "0.5"))
     # Longest image side sent to the model, in pixels.
     max_image_side: int = int(os.getenv("MAX_IMAGE_SIDE", "1280"))
 

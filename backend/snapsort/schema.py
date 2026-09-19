@@ -54,8 +54,13 @@ class CalendarPayload(BaseModel):
     description: Optional[str] = None
 
 
+Decision = Literal["auto_add", "ask"]
+
+
 class Proposal(BaseModel):
+    id: str  # stable hash of title+start: use for notification ids and dedup
     action: Literal["calendar.create"] = "calendar.create"
+    decision: Decision  # "auto_add": add then notify with Undo · "ask": confirm with the user first
     payload: CalendarPayload
     confidence: float
     evidence: str
