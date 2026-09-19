@@ -63,13 +63,6 @@ def resolve_date(date_text: Optional[str], date_guess: Optional[str], anchor: da
         )
         if dt:
             parsed = dt.date()
-            # No explicit year and it landed in the past: roll forward to next year.
-            if not re.search(r"\b(19|20)\d{2}\b", date_text) and parsed < anchor.date() - timedelta(days=1):
-                try:
-                    parsed = parsed.replace(year=parsed.year + 1)
-                    notes.append("rolled_year_forward")
-                except ValueError:
-                    pass
 
     if date_guess:
         try:

@@ -17,6 +17,8 @@ import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.cancel
+import kotlinx.coroutines.CancellationException
+import kotlinx.coroutines.isActive
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
@@ -40,7 +42,23 @@ class ScreenshotWatcherService : Service() {
             handler.postDelayed(scanRunnable, 1500)
         }
     }
-    private val scanRunnable = Runnable { scope.launch { scan() } }
+    private val scanRunnable: Runnable = Runnable {
+        scope.launch {
+            try {
+                scan()
+            } catch (e: CancellationException) {
+                throw e
+            } catch (e: Exception) {
+                Log.w("Snapsort", "scan failed", e)
+                store.log("❌ Scan failed: ${e.message}")
+            } finally {
+                if (scope.isActive) {
+                    handler.removeCallbacks(scanRunnable)
+                    handler.postDelayed(scanRunnable, 30_000)
+                }
+            }
+        }
+    }
 
     override fun onCreate() {
         super.onCreate()
@@ -54,11 +72,13 @@ class ScreenshotWatcherService : Service() {
         if (store.lastSeenId < 0) store.lastSeenId = newestImageId() // don't process the existing backlog
         contentResolver.registerContentObserver(MediaStore.Images.Media.EXTERNAL_CONTENT_URI, true, observer)
         store.log("Watcher started")
+        handler.post(scanRunnable)
     }
 
     override fun onStartCommand(intent: Intent?, flags: Int, startId: Int) = START_STICKY
 
     override fun onDestroy() {
+        handler.removeCallbacks(scanRunnable)
         contentResolver.unregisterContentObserver(observer)
         scope.cancel()
         store.log("Watcher stopped")
@@ -69,8 +89,10 @@ class ScreenshotWatcherService : Service() {
 
     private suspend fun scan() = scanLock.withLock {
         for ((id, capturedAt) in newScreenshots()) {
-            store.lastSeenId = maxOf(store.lastSeenId, id)
             val uri = ContentUris.withAppendedId(MediaStore.Images.Media.EXTERNAL_CONTENT_URI, id)
+            store.enqueueScreenshot(uri, capturedAt, id)
+        }
+        for ((uri, capturedAt) in store.pendingScreenshots()) {
             process(this, uploader, store, uri, capturedAt)
         }
     }
@@ -108,14 +130,17 @@ class ScreenshotWatcherService : Service() {
 
     companion object {
         /** Shared by the watcher and the manual "pick an image" / share paths. */
+        @Synchronized
         fun process(ctx: Context, uploader: Uploader, store: Store, uri: Uri, capturedAt: Long) {
-            Notifier.showProcessing(ctx)
             try {
-                val result = uploader.analyze(uri, capturedAt)
+                val originalCapture = store.enqueueScreenshot(uri, capturedAt)
+                Notifier.showProcessing(ctx)
+                val result = uploader.analyze(uri, originalCapture)
                 val secs = result.latencyMs / 1000
                 if (result.proposals.isEmpty()) store.log("⏭ Skipped: ${result.skippedReason ?: "nothing found"} · ${secs}s")
                 // The backend's policy gate decides; the app just follows `decision` (CLAUDE.md §2.5).
                 for (p in result.proposals) {
+                    if (store.handledEventId(p.id) != null) continue
                     val eventId = if (p.autoAdd) CalendarWriter.insert(ctx, p) else null
                     if (eventId != null) {
                         Notifier.showAdded(ctx, p, eventId)
@@ -127,6 +152,7 @@ class ScreenshotWatcherService : Service() {
                         store.log("❓ Asked: ${p.title} (${Notifier.prettyWhen(p)}) · ${secs}s")
                     }
                 }
+                store.completeScreenshot(uri)
             } catch (e: Exception) {
                 Log.w("Snapsort", "analyze failed", e)
                 store.log("❌ ${e.message}")

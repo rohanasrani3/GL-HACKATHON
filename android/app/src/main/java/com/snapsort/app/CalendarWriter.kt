@@ -28,11 +28,27 @@ object CalendarWriter {
     )?.use { c -> if (c.moveToFirst()) c.getLong(0) else null }
 
     /** Returns the new event id, or null if it couldn't be written. */
+    @Synchronized
     fun insert(ctx: Context, p: Proposal): Long? {
+        val store = Store(ctx)
+        store.handledEventId(p.id)?.let { return it }
         if (!hasPermission(ctx)) return null
+        // Recover a write if the process stopped before saving its local receipt.
+        val proposalUri = "snapsort://proposal/${p.id}"
+        val existingId = ctx.contentResolver.query(
+            Events.CONTENT_URI, arrayOf(Events._ID),
+            "${Events.CUSTOM_APP_PACKAGE} = ? AND ${Events.CUSTOM_APP_URI} = ?",
+            arrayOf(ctx.packageName, proposalUri), null,
+        )?.use { c -> if (c.moveToFirst()) c.getLong(0) else null }
+        if (existingId != null) {
+            store.markHandled(p.id, existingId)
+            return existingId
+        }
         val calendarId = defaultCalendarId(ctx) ?: return null
         val values = ContentValues().apply {
             put(Events.CALENDAR_ID, calendarId)
+            put(Events.CUSTOM_APP_PACKAGE, ctx.packageName)
+            put(Events.CUSTOM_APP_URI, proposalUri)
             put(Events.TITLE, p.title)
             put(Events.EVENT_LOCATION, p.location ?: p.onlineUrl)
             put(Events.DESCRIPTION, listOfNotNull(p.description, p.onlineUrl, "Added by Snapsort from a screenshot").joinToString("\n"))
@@ -49,7 +65,9 @@ object CalendarWriter {
             }
         }
         return try {
-            ctx.contentResolver.insert(Events.CONTENT_URI, values)?.let { ContentUris.parseId(it) }
+            ctx.contentResolver.insert(Events.CONTENT_URI, values)?.let {
+                ContentUris.parseId(it).also { id -> store.markHandled(p.id, id) }
+            }
         } catch (e: SecurityException) {
             null
         }

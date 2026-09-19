@@ -122,3 +122,17 @@ Actionable notifications (Confirm / Edit / Undo). The Edit screen opens a pre-fi
 - **Autonomy level:** `off` | `suggest` | `auto`, set per skill.
 - **Evidence:** the OCR span or bounding box behind an extracted field.
 - **Undo token:** an opaque handle returned by a connector write that reverses it.
+
+## Agent skills
+
+### Issue tracker
+Issues and specs use local Markdown under `.scratch/<feature>/`.
+Read `docs/agents/issue-tracker.md` for ticket operations.
+
+### Triage labels
+Use the five default triage roles.
+Read `docs/agents/triage-labels.md` when assigning triage status.
+
+### Domain docs
+This repo uses a single-context layout.
+Read `docs/agents/domain.md` before exploring the codebase.

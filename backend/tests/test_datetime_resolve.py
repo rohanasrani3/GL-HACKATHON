@@ -30,6 +30,10 @@ def test_past_date_rolls_to_next_year():
     assert resolve_date("5 Jan", None, ANCHOR).value == date(2027, 1, 5)
 
 
+def test_past_relative_date_stays_in_capture_year():
+    assert resolve_date("2 days ago", None, ANCHOR).value == date(2026, 9, 17)
+
+
 def test_weekday_is_in_future():
     d = resolve_date("this Friday", None, ANCHOR).value
     assert d is not None and d >= ANCHOR.date() and d.weekday() == 4

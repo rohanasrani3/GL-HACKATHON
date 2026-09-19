@@ -26,6 +26,7 @@ class ActionReceiver : BroadcastReceiver() {
         val p = Proposal.fromJson(intent.getStringExtra(EXTRA_PROPOSAL) ?: return)
         when (intent.action) {
             ACTION_ADD -> {
+                if (store.handledEventId(p.id) != null) return
                 val eventId = CalendarWriter.insert(ctx, p)
                 if (eventId != null) {
                     Notifier.showAdded(ctx, p, eventId)

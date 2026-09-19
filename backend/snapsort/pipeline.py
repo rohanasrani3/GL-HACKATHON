@@ -6,7 +6,7 @@ import time as clock
 from datetime import datetime, timedelta
 from pathlib import Path
 from typing import Optional
-from zoneinfo import ZoneInfo
+from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
 
 from PIL import Image
 
@@ -16,6 +16,10 @@ from .models import ModelClient
 from .schema import AnalyzeResponse, CalendarPayload, Extraction, Location, Proposal, RawEvent
 
 SKILL_PROMPT = (Path(__file__).parent / "skills" / "calendar_event" / "SKILL.md").read_text(encoding="utf-8")
+
+
+class InvalidInputError(ValueError):
+    """The supplied timezone or image is invalid."""
 
 
 def preprocess_image(data: bytes, max_side: int) -> str:
@@ -153,21 +157,31 @@ async def analyze(
     locale: str = "en-HK",
 ) -> AnalyzeResponse:
     t0 = clock.perf_counter()
-    tz = ZoneInfo(timezone or settings.default_timezone)
+    try:
+        tz = ZoneInfo(timezone or settings.default_timezone)
+    except (ZoneInfoNotFoundError, ValueError) as e:
+        if not timezone:
+            raise
+        raise InvalidInputError("invalid timezone") from e
     captured_at = (captured_at or datetime.now(tz)).astimezone(tz)
 
-    image_b64 = preprocess_image(image_bytes, settings.max_image_side)
+    try:
+        image_b64 = preprocess_image(image_bytes, settings.max_image_side)
+    except (OSError, ValueError, Image.DecompressionBombError) as e:
+        raise InvalidInputError("invalid or corrupt image") from e
     extraction: Extraction = await client.extract(image_b64, SKILL_PROMPT, build_user_prompt(captured_at, locale))
 
     proposals: list[Proposal] = []
+    seen_ids: set[str] = set()
     skipped = extraction.skipped_reason
     if extraction.sensitive:
         skipped = "sensitive_content"
     elif extraction.actionable:
         for ev in extraction.events[:10]:
             p = to_proposal(ev, extraction.genre, captured_at, tz, locale)
-            if p and p.confidence >= settings.ask_threshold:
+            if p and p.confidence >= settings.ask_threshold and p.id not in seen_ids:
                 proposals.append(p)
+                seen_ids.add(p.id)
         if not proposals and not skipped:
             skipped = "no_confident_future_events"
 
