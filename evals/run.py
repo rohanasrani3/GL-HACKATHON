@@ -31,12 +31,10 @@ def check(expected: list[dict], proposals: list[dict]) -> tuple[bool, list[str]]
             problems.append(f"false positive: {[p['payload']['title'] for p in proposals]}")
         return not problems, problems
     for exp in expected:
-        match = None
-        for p in proposals:
-            pl = p["payload"]
-            if exp.get("title_contains", "").lower() in pl["title"].lower():
-                match = pl
-                break
+        # Several proposals can share words ("Application deadline: X" vs "X"): prefer one whose start also matches.
+        titled = [p["payload"] for p in proposals if exp.get("title_contains", "").lower() in p["payload"]["title"].lower()]
+        dated = [pl for pl in titled if "start" in exp and pl["start"].startswith(exp["start"])]
+        match = (dated or titled or [None])[0]
         if match is None:
             problems.append(f"missing event '{exp.get('title_contains')}' (got {[p['payload']['title'] for p in proposals]})")
             continue

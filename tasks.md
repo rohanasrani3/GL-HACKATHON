@@ -5,7 +5,7 @@
 **Hackathon scope** (a deliberate subset of [CLAUDE.md](CLAUDE.md) / [skills.md](skills.md)):
 - Android only, Kotlin. Watcher = foreground service + `ContentObserver` (not WorkManager).
 - No on-device OCR. The phone uploads the image and the backend does triage + extraction in one model call.
-- Backend = FastAPI on the laptop. Model = Gemma 4 E2B (`gemma4:e2b-it-qat`) via Ollama, with a hosted fallback switch (`MODEL_PROVIDER=claude`).
+- Backend = FastAPI on the laptop. **Model = hosted via OpenRouter** (`google/gemma-4-26b-a4b-it`, fallback `google/gemini-2.5-flash-lite`). Local Ollama, Claude and mock remain selectable with `MODEL_PROVIDER`.
 - **Policy gate lives in the backend** so Android and iOS behave the same: each proposal carries `decision` = `auto_add` (confidence ≥ 0.8 and nothing unclear) or `ask` (0.5–0.8, or date/time uncertain). Below 0.5 is dropped.
 - Calendar write: `auto_add` writes directly (Android CalendarContract / iOS EventKit), then notifies with **Undo**. `ask` waits for **Add**. Without calendar permission everything falls back to `ask` + the calendar app's editor.
 - iOS app is built by a coworker (with Codex) from [frontend.md](frontend.md).
@@ -64,8 +64,8 @@ Legend: `[x]` done · `[~]` in progress · `[ ]` todo · `[!]` blocked / needs d
 
 **Backend (laptop):**
 ```bash
-# 1. Model server (GTX 1650 needs the CUDA 12 backend)
-OLLAMA_LLM_LIBRARY=cuda_v12 ollama serve
+# 1. One-time: copy backend/.env.example to backend/.env and paste your OPENROUTER_API_KEY
+#    (only if MODEL_PROVIDER=ollama: OLLAMA_LLM_LIBRARY=cuda_v12 ollama serve)
 # 2. API
 cd backend
 .venv/Scripts/python -m uvicorn snapsort.main:app --host 0.0.0.0 --port 8000
@@ -93,3 +93,6 @@ Server URL in the app: **`http://127.0.0.1:8000`** (the default). Re-run the `ad
 - Resumed. New requirements: auto-add confident events and notify afterwards; ask first for unclear ones. Backend now returns `decision` + `id`, has `/feedback` and a mock provider (21/21 tests). Android updated (CalendarWriter, ActionReceiver, new notifications). Wrote frontend.md for the iOS coworker. **Still open:** model speed decision (download gemma4:e2b-it-qat?), Android build in Android Studio.
 - 20:15: User installed `gemma4:e2b-it-qat`. Evals 5/5, median 8.8 s (8× faster). Now the default. Added a 5xx retry. **Next:** Android build in Android Studio, then phone ↔ laptop end-to-end.
 - 22:35: Physical phone (OnePlus Nord CE) connected. "Failed to connect" was the app URL set to the VPN IP 10.2.0.2. Fixed via `adb reverse` + `http://127.0.0.1:8000` (now the app default).
+- 23:00: Bug from real phone test: "12–16 Oct 2026" programme became a 1-day event. Fixed in code: `end_date_text/guess` fields, deterministic `split_range()`, multi-day → one all-day event (daily hours in the description), `dates_seen` pre-listing. 29 tests pass. **But gemma4:e2b (2B) only returns 1 of the 2 events on that dense page** (programme OR deadline, varies). Decision: **run the backend on a better laptop with a bigger model** (`gemma4:12b` or larger). Real screenshots for re-testing are in `evals/screenshots/real/` (git-ignored, copy manually).
+- Switched default model provider to **OpenRouter** (no local LLM needed): `openrouter_client.py` with strict JSON-schema output, `models` fallback list, `data_collection: deny`, retries on 429/5xx, clear 401/402 errors. 44 tests pass (8 new, fake HTTP). **Needs:** `OPENROUTER_API_KEY` in `backend/.env`, then re-run evals incl. the real CEDARS screenshot.
+- OpenRouter live: **7/7 evals pass, median ~9 s** (gemma-4-26b via SiliconFlow). Real CEDARS page now gives BOTH events: programme 12–16 Oct (all-day, auto_add) + deadline 20 Sep (ask). Fixed: schema cleaner was deleting the event's `title` field; eval scorer now matches title+date. API key moved from config.py to backend/.env (git-ignored). **Rotate that key**, it was exposed in chat.

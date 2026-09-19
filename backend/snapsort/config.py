@@ -22,9 +22,15 @@ _load_dotenv()
 
 @dataclass(frozen=True)
 class Settings:
-    model_provider: str = os.getenv("MODEL_PROVIDER", "ollama")
+    model_provider: str = os.getenv("MODEL_PROVIDER", "openrouter")  # openrouter | ollama | claude | mock
+    openrouter_api_key: str = os.getenv("OPENROUTER_API_KEY", "")  # set in backend/.env, never here
+    openrouter_model: str = os.getenv("OPENROUTER_MODEL", "google/gemma-4-26b-a4b-it")
+    # Comma-separated; OpenRouter tries these in order if the primary model/provider is unavailable.
+    openrouter_fallbacks: tuple[str, ...] = tuple(
+        m.strip() for m in os.getenv("OPENROUTER_FALLBACK_MODELS", "google/gemini-2.5-flash-lite").split(",") if m.strip()
+    )
     ollama_url: str = os.getenv("OLLAMA_URL", "http://localhost:11434")
-    ollama_model: str = os.getenv("OLLAMA_MODEL", "gemma4:e2b-it-qat")
+    ollama_model: str = os.getenv("OLLAMA_MODEL", "qwen2.5:7b")
     claude_model: str = os.getenv("CLAUDE_MODEL", "claude-opus-5")
     api_token: str = os.getenv("API_TOKEN", "")
     default_timezone: str = os.getenv("DEFAULT_TIMEZONE", "Asia/Hong_Kong")

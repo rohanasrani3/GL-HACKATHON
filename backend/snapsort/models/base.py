@@ -1,4 +1,4 @@
-"""ModelClient interface: swap Gemma (local) and Claude (hosted) via MODEL_PROVIDER."""
+"""ModelClient interface: swap OpenRouter (hosted, default), Ollama (local), Claude or mock via MODEL_PROVIDER."""
 from typing import Protocol
 
 from ..schema import Extraction
@@ -23,6 +23,10 @@ def get_client() -> ModelClient:
         from .mock_client import MockClient
 
         return MockClient()
+    if settings.model_provider == "openrouter":
+        from .openrouter_client import OpenRouterClient
+
+        return OpenRouterClient(settings.openrouter_api_key, settings.openrouter_model, list(settings.openrouter_fallbacks))
     if settings.model_provider == "claude":
         from .claude_client import ClaudeClient
 
