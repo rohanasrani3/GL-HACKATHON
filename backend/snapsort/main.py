@@ -60,6 +60,12 @@ async def health():
     }
 
 
+@app.get("/auth/check", status_code=204)
+async def auth_check(x_api_token: Optional[str] = Header(None)):
+    """Lets apps verify their API token in Settings ("Save & test") without sending an image."""
+    check_token(x_api_token)
+
+
 class Feedback(BaseModel):
     proposal_id: str
     decision: Literal["auto_add", "ask"]

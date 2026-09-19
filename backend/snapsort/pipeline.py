@@ -54,8 +54,11 @@ def decide(confidence: float, notes: list[str]) -> str:
 
 def resolve_end_date(ev: RawEvent, range_end_text: Optional[str], start_date, captured_at: datetime, locale: str, notes: list[str]):
     """Last day of a multi-day event, or None for single-day events."""
-    end_text = ev.end_date_text or range_end_text
+    end_text = range_end_text or ev.end_date_text
     if not end_text and not ev.end_date_guess:
+        return None, 0.0
+    # The model itself says it ends the same day: single-day event, whatever the end text parses to.
+    if not range_end_text and ev.end_date_guess == start_date.isoformat():
         return None, 0.0
     r = resolve_date(end_text, ev.end_date_guess, captured_at, locale)
     notes += [f"end:{n}" for n in r.notes]

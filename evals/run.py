@@ -13,6 +13,7 @@ An empty "events" list means "nothing should be proposed".
 import argparse
 import asyncio
 import json
+import os
 import sys
 from datetime import datetime
 from pathlib import Path
@@ -47,7 +48,7 @@ def check(expected: list[dict], proposals: list[dict]) -> tuple[bool, list[str]]
     return not problems, problems
 
 
-async def run_one(img: Path, exp: dict, url: str | None) -> dict:
+async def run_one(img: Path, exp: dict, url: str | None, token: str = "") -> dict:
     if url:
         import httpx
 
@@ -56,6 +57,7 @@ async def run_one(img: Path, exp: dict, url: str | None) -> dict:
                 f"{url}/analyze",
                 files={"file": (img.name, img.read_bytes(), "image/png")},
                 data={"captured_at": exp["captured_at"]},
+                headers={"X-Api-Token": token} if token else {},
             )
             r.raise_for_status()
             return r.json()
@@ -66,6 +68,7 @@ async def run_one(img: Path, exp: dict, url: str | None) -> dict:
 async def main():
     ap = argparse.ArgumentParser()
     ap.add_argument("--url", default=None)
+    ap.add_argument("--token", default=os.getenv("SNAPSORT_API_TOKEN", ""), help="X-Api-Token for a protected server")
     ap.add_argument("--only", default=None, help="substring filter on file name")
     args = ap.parse_args()
 
@@ -83,7 +86,7 @@ async def main():
             continue
         exp = json.loads(exp_file.read_text(encoding="utf-8"))
         try:
-            res = await run_one(img, exp, args.url)
+            res = await run_one(img, exp, args.url, args.token)
         except Exception as e:  # noqa: BLE001
             print(f"ERROR {img.name}: {e}")
             continue

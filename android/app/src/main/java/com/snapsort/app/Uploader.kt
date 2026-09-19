@@ -89,6 +89,18 @@ class Uploader(private val context: Context, private val store: Store) {
         }
     }
 
+    /** Throws a readable error if the saved API token is rejected (backend GET /auth/check). */
+    fun checkToken() {
+        val req = Request.Builder().url("${store.serverUrl}/auth/check")
+            .apply { if (store.apiToken.isNotBlank()) header("X-Api-Token", store.apiToken) }
+            .build()
+        http.newCall(req).execute().use { r ->
+            if (r.code == 401) throw IOException("Server reachable, but the API token is wrong")
+            if (r.code == 404) return // older backend without /auth/check
+            if (!r.isSuccessful) throw IOException("HTTP ${r.code}")
+        }
+    }
+
     fun analyze(uri: Uri, capturedAtMillis: Long): AnalyzeResult {
         val jpeg = downscale(uri, 1600)
         val capturedAt = Instant.ofEpochMilli(capturedAtMillis).atZone(ZoneId.systemDefault()).toOffsetDateTime().toString()

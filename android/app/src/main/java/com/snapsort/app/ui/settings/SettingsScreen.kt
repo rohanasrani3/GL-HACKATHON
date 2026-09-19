@@ -71,7 +71,7 @@ fun SettingsScreen(
             OutlinedTextField(
                 value = serverUrl,
                 onValueChange = onServerUrlChange,
-                label = { Text("Laptop server URL") },
+                label = { Text("Server URL") },
                 singleLine = true,
                 modifier = Modifier.fillMaxWidth(),
             )
@@ -79,7 +79,7 @@ fun SettingsScreen(
             OutlinedTextField(
                 value = apiToken,
                 onValueChange = onApiTokenChange,
-                label = { Text("API token (optional)") },
+                label = { Text("API token") },
                 singleLine = true,
                 modifier = Modifier.fillMaxWidth(),
             )

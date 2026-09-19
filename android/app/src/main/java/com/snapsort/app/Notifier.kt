@@ -141,7 +141,14 @@ object Notifier {
     }
 
     fun prettyWhen(p: Proposal): String = if (p.allDay) {
-        LocalDate.parse(p.start).format(DateTimeFormatter.ofPattern("EEE d MMM")) + " (all day)"
+        val start = LocalDate.parse(p.start)
+        val last = LocalDate.parse(p.end).minusDays(1) // backend end date is exclusive
+        if (last.isAfter(start)) {
+            val startFmt = if (start.month == last.month) "EEE d" else "EEE d MMM"
+            "${start.format(DateTimeFormatter.ofPattern(startFmt))} – ${last.format(DateTimeFormatter.ofPattern("EEE d MMM"))}"
+        } else {
+            start.format(DateTimeFormatter.ofPattern("EEE d MMM")) + " (all day)"
+        }
     } else {
         OffsetDateTime.parse(p.start).format(DateTimeFormatter.ofPattern("EEE d MMM, HH:mm"))
     }

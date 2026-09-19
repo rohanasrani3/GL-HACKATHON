@@ -129,3 +129,15 @@ def test_duplicate_events_preserve_distinct_proposals_in_order(monkeypatch):
                    data={"captured_at": datetime.now(HK).isoformat(), "timezone": "Asia/Hong_Kong"})
     assert r.status_code == 200, r.text
     assert [p["payload"]["title"] for p in r.json()["proposals"]] == ["One talk", "Another talk"]
+
+
+def test_auth_check(monkeypatch):
+    monkeypatch.setattr(main, "client", FakeClient(None))
+    object.__setattr__(main.settings, "api_token", "s3cret")
+    try:
+        with TestClient(main.app) as c:
+            assert c.get("/auth/check").status_code == 401
+            assert c.get("/auth/check", headers={"X-Api-Token": "wrong"}).status_code == 401
+            assert c.get("/auth/check", headers={"X-Api-Token": "s3cret"}).status_code == 204
+    finally:
+        object.__setattr__(main.settings, "api_token", "")

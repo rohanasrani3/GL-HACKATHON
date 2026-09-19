@@ -168,7 +168,10 @@ class MainActivity : ComponentActivity() {
     private fun testConnection() = thread {
         val msg = try {
             store.lastError = null
-            "Connected: ${uploader.health()}"
+            val health = uploader.health()
+            uploader.checkToken()
+            val model = Regex("\"model\":\"([^\"]+)\"").find(health)?.groupValues?.get(1) ?: "?"
+            "Connected · token OK · $model"
         } catch (e: Exception) {
             store.lastError = e.message
             "Failed: ${e.message}"

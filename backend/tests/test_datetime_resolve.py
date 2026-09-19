@@ -81,3 +81,27 @@ def test_split_range_not_a_range():
     assert split_range("20 Sept 2026 (Sun)") is None
     assert split_range("Room 12-16 Building") is None
     assert split_range(None) is None
+
+
+# ---- messy real-world phrases (University Drive notice regression) ----
+from snapsort.datetime_resolve import has_date_content  # noqa: E402
+
+
+def test_time_only_text_is_not_a_date():
+    assert not has_date_content("6:00 pm")
+    assert not has_date_content("8:30 am – 6:00 pm")
+    assert has_date_content("tomorrow 1pm")
+    assert has_date_content("16 Oct")
+    assert has_date_content("3/10")
+    assert has_date_content("2 days ago") and has_date_content("in 3 weeks") and has_date_content("yesterday")
+
+
+def test_time_only_end_text_does_not_become_next_day():
+    late = datetime(2026, 9, 19, 22, 36, tzinfo=HK)  # screenshot taken after 6pm
+    r = resolve_date("6:00 pm", "2026-09-19", late)
+    assert r.value == date(2026, 9, 19) and "text_has_no_date" in r.notes
+
+
+def test_messy_header_parses():
+    r = resolve_date("September 19, 2026 (Sat); 8:30 am – 6:00 pm", "2026-09-19", ANCHOR)
+    assert r.value == date(2026, 9, 19) and "parser_and_model_agree" in r.notes
