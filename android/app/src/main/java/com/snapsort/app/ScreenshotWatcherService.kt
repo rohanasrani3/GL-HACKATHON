@@ -71,6 +71,7 @@ class ScreenshotWatcherService : Service() {
         )
         if (store.lastSeenId < 0) store.lastSeenId = newestImageId() // don't process the existing backlog
         contentResolver.registerContentObserver(MediaStore.Images.Media.EXTERNAL_CONTENT_URI, true, observer)
+        store.watcherRunning = true
         store.log("Watcher started")
         handler.post(scanRunnable)
     }
@@ -81,6 +82,8 @@ class ScreenshotWatcherService : Service() {
         handler.removeCallbacks(scanRunnable)
         contentResolver.unregisterContentObserver(observer)
         scope.cancel()
+        store.watcherRunning = false
+        store.processingSince = 0L
         store.log("Watcher stopped")
         super.onDestroy()
     }
@@ -88,6 +91,7 @@ class ScreenshotWatcherService : Service() {
     override fun onBind(intent: Intent?): IBinder? = null
 
     private suspend fun scan() = scanLock.withLock {
+        store.lastScanAt = System.currentTimeMillis()
         for ((id, capturedAt) in newScreenshots()) {
             val uri = ContentUris.withAppendedId(MediaStore.Images.Media.EXTERNAL_CONTENT_URI, id)
             store.enqueueScreenshot(uri, capturedAt, id)
@@ -135,9 +139,22 @@ class ScreenshotWatcherService : Service() {
             try {
                 val originalCapture = store.enqueueScreenshot(uri, capturedAt)
                 Notifier.showProcessing(ctx)
+                store.processingSince = System.currentTimeMillis()
                 val result = uploader.analyze(uri, originalCapture)
+                store.lastError = null // a successful round-trip clears the OFFLINE banner
                 val secs = result.latencyMs / 1000
-                if (result.proposals.isEmpty()) store.log("⏭ Skipped: ${result.skippedReason ?: "nothing found"} · ${secs}s")
+                if (result.proposals.isEmpty()) {
+                    val reason = result.skippedReason ?: "nothing found"
+                    store.log("⏭ Skipped: $reason · ${secs}s")
+                    store.recordActivity(
+                        ActivityRecord(
+                            id = "skipped-${uri.hashCode()}",
+                            title = "Screenshot skipped",
+                            status = ActivityRecord.SKIPPED,
+                            summary = reason,
+                        ),
+                    )
+                }
                 // The backend's policy gate decides; the app just follows `decision` (CLAUDE.md §2.5).
                 for (p in result.proposals) {
                     if (store.handledEventId(p.id) != null) continue
@@ -145,19 +162,32 @@ class ScreenshotWatcherService : Service() {
                     if (eventId != null) {
                         Notifier.showAdded(ctx, p, eventId)
                         store.log("✅ Added: ${p.title} (${Notifier.prettyWhen(p)}) · ${secs}s")
+                        store.recordActivity(p.toActivity(ActivityRecord.EXECUTED, "Added to calendar", eventId))
                         uploader.feedback(p, "added")
                     } else {
                         // Unclear, or auto-add not possible (no calendar permission): ask the user.
                         Notifier.showAsk(ctx, p)
                         store.log("❓ Asked: ${p.title} (${Notifier.prettyWhen(p)}) · ${secs}s")
+                        store.recordActivity(p.toActivity(ActivityRecord.NEEDS_ATTENTION, "Needs your confirmation"))
                     }
                 }
                 store.completeScreenshot(uri)
             } catch (e: Exception) {
                 Log.w("Snapsort", "analyze failed", e)
-                store.log("❌ ${e.message}")
-                Notifier.showError(ctx, e.message ?: "unknown error")
+                val message = e.message ?: "unknown error"
+                store.log("❌ $message")
+                store.lastError = message
+                store.recordActivity(
+                    ActivityRecord(
+                        id = "failed-${uri.hashCode()}",
+                        title = "Screenshot upload failed",
+                        status = ActivityRecord.FAILED,
+                        summary = message,
+                    ),
+                )
+                Notifier.showError(ctx, message)
             } finally {
+                store.processingSince = 0L
                 Notifier.clearProcessing(ctx)
             }
         }

@@ -59,6 +59,20 @@ data class Proposal(
 
 data class AnalyzeResult(val proposals: List<Proposal>, val skippedReason: String?, val latencyMs: Int)
 
+/**
+ * Feed entry for this proposal. Keeps the raw JSON so Home can still Undo or confirm it later
+ * without another round-trip to the backend.
+ */
+fun Proposal.toActivity(status: String, summary: String, eventId: Long? = null) = ActivityRecord(
+    id = id,
+    title = title,
+    status = status,
+    summary = summary,
+    eventTime = Notifier.prettyWhen(this),
+    eventId = eventId,
+    proposalJson = json,
+)
+
 /** Sends a screenshot to the laptop backend's POST /analyze (see backend/snapsort/main.py). */
 class Uploader(private val context: Context, private val store: Store) {
 

@@ -13,6 +13,9 @@ android/local.properties
 android/.idea/
 *.apk
 
+# IDE (repo root, e.g. IntelliJ/PyCharm opened on the project root)
+.idea/
+
 # Evals: real screenshots may contain personal data, keep them out of git
 evals/screenshots/real/
 evals/results/
