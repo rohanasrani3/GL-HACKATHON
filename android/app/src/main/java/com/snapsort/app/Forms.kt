@@ -23,9 +23,9 @@ object PrefillStyle {
 }
 
 /**
- * A registration form Snapsort found in a screenshot.
+ * A registration form later.exe found in a screenshot.
  *
- * Snapsort pre-fills and opens it. It never submits: CLAUDE.md §4.6 makes that non-negotiable,
+ * later.exe pre-fills and opens it. It never submits: CLAUDE.md §4.6 makes that non-negotiable,
  * which is why the backend always sends `decision = "ask"` for these.
  */
 data class FormPrefill(
@@ -37,7 +37,7 @@ data class FormPrefill(
     val json: String,
     val prefillStyle: String = PrefillStyle.NONE,
     val provider: String = "generic",
-    /** Why Snapsort thinks this is a form, so the guess is never a black box. */
+    /** Why later.exe thinks this is a form, so the guess is never a black box. */
     val reasons: List<String> = emptyList(),
 ) {
     val canPrefill get() = prefillStyle != PrefillStyle.NONE && fields.any { !it.sensitive }
@@ -85,7 +85,7 @@ data class FormPrefill(
  * - Any other GET form or hosted builder: `?<input name>=<value>`.
  * - Otherwise the URL is returned untouched and the user copies the values in.
  *
- * Whatever the style, the form only ever *opens*. Snapsort never submits it (CLAUDE.md §4.6),
+ * Whatever the style, the form only ever *opens*. later.exe never submits it (CLAUDE.md §4.6),
  * and sensitive fields are never put in the URL at all.
  */
 fun buildPrefillUrl(form: FormPrefill, valuesByEntryId: Map<String, String>): String {

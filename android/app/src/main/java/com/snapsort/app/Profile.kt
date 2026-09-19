@@ -3,7 +3,7 @@ package com.snapsort.app
 import android.content.Context
 
 /**
- * What Snapsort knows about you, for filling in registration forms.
+ * What later.exe knows about you, for filling in registration forms.
  *
  * Local only (CLAUDE.md §2.8). These values are never sent to the backend — it names which
  * profile key answers each question, and the phone supplies the value (§4.3, minimal egress).

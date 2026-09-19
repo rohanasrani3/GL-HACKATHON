@@ -1,0 +1,10 @@
+{
+  // Backend venv. With this set, the Python extension activates it automatically in every new
+  // terminal, so `python test.py` works from backend/ without typing the .venv path.
+  // ${workspaceFolder} keeps it portable - it is not tied to one machine.
+  "python.defaultInterpreterPath": "${workspaceFolder}/backend/.venv/Scripts/python.exe",
+  "python.terminal.activateEnvironment": true,
+  "python.testing.pytestEnabled": true,
+  "python.testing.pytestArgs": ["backend/tests"],
+  "python.analysis.extraPaths": ["${workspaceFolder}/backend"]
+}

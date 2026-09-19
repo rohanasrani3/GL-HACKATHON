@@ -1,7 +1,7 @@
-# Snapsort / Later Domain Context
+# later.exe / Later Domain Context
 
 ## Product
-Snapsort (working product name; product direction discussed as “Later”) turns phone screenshots into actions automatically. The v1 tracer bullet is screenshot → understand time-related intent → policy decision → calendar action → notification/log.
+later.exe (working product name; product direction discussed as “Later”) turns phone screenshots into actions automatically. The v1 tracer bullet is screenshot → understand time-related intent → policy decision → calendar action → notification/log.
 
 ## Shared language
 - **Screenshot**: a newly captured image asset that may contain actionable information.
@@ -10,7 +10,7 @@ Snapsort (working product name; product direction discussed as “Later”) turn
 - **Proposal**: a validated candidate action returned to the phone. Proposals do not perform side effects.
 - **Decision**: deterministic policy result: `auto_add` or `ask`.
 - **Handled proposal**: a proposal whose stable id has already been resolved; it must not create duplicate side effects.
-- **Activity entry**: local audit record of what Snapsort saw/decided/did.
+- **Activity entry**: local audit record of what later.exe saw/decided/did.
 - **Sensitive screenshot**: banking, passwords/OTPs, IDs, or medical content. Production intent is local-only filtering before any remote egress.
 - **Watcher**: Android ingestion module that discovers newly created screenshot assets.
 - **Calendar write**: reversible side effect performed only after policy allows it.

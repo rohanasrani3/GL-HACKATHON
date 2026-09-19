@@ -72,7 +72,7 @@ class MainActivity : ComponentActivity() {
                 toast("Photo access is needed to see new screenshots")
                 return@registerForActivityResult
             }
-            if (!CalendarWriter.hasPermission(this)) toast("No calendar access: Snapsort will ask before every event")
+            if (!CalendarWriter.hasPermission(this)) toast("No calendar access: later.exe will ask before every event")
             startWatcher()
         }
 
@@ -198,7 +198,7 @@ class MainActivity : ComponentActivity() {
     /**
      * Save anything new to the profile, then open the pre-filled form in the browser.
      *
-     * This is where Snapsort stops: the form opens with the answers typed in and the user
+     * This is where later.exe stops: the form opens with the answers typed in and the user
      * presses Submit (CLAUDE.md §4.6).
      */
     private fun openPrefilledForm(form: FormPrefill) {
@@ -291,7 +291,7 @@ class MainActivity : ComponentActivity() {
         } catch (_: Exception) {
             // Some OEMs hide that screen: fall back to the general battery settings page.
             runCatching { startActivity(Intent(Settings.ACTION_IGNORE_BATTERY_OPTIMIZATION_SETTINGS)) }
-                .onFailure { toast("Open Settings > Battery and allow Snapsort to run in the background") }
+                .onFailure { toast("Open Settings > Battery and allow later.exe to run in the background") }
         }
     }
 

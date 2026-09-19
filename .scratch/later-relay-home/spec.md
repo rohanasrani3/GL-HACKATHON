@@ -149,7 +149,7 @@ The selected direction intentionally incorporates two details from the earlier e
 - A major navigation framework, multiple tabs, a permanent Needs Attention destination, or final information architecture beyond Home.
 - Elaborate animation, live elapsed-time infrastructure, custom loading graphics, glow, gradients, glass effects, or fake terminal interactions.
 - A repository-wide design system, architecture migration, dependency-injection framework, persistence layer, or production Home ViewModel.
-- Renaming Android package identifiers or backend/domain types from Snapsort as part of this visual milestone.
+- Renaming Android package identifiers or backend/domain types from later.exe as part of this visual milestone.
 - Pixel-perfect support for tablets, foldables, landscape layouts, or localization beyond ensuring the composition does not rely on fixed title widths.
 
 ## Further Notes

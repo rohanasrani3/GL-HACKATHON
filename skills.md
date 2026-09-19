@@ -1,4 +1,4 @@
-# skills.md: Snapsort skill catalogue
+# skills.md: later.exe skill catalogue
 
 A **skill** is a self-contained capability the orchestrator can route a screenshot to. Each skill reads a screenshot and returns **proposed actions**. It never performs side effects itself (see [CLAUDE.md](CLAUDE.md) §2.5, the policy gate).
 

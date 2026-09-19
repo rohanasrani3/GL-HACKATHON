@@ -119,7 +119,7 @@ class FormField(BaseModel):
 # How the destination accepts pre-filled answers:
 #   google_forms - ?usp=pp_url&entry.N=value, exact and reliable
 #   query        - ?<input name>=value; works on many GET forms and hosted builders
-#   none         - no URL prefill; Snapsort opens it and shows the values to copy
+#   none         - no URL prefill; later.exe opens it and shows the values to copy
 PrefillStyle = Literal["google_forms", "query", "none"]
 
 

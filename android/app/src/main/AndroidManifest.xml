@@ -30,7 +30,7 @@
     <application
         android:allowBackup="false"
         android:icon="@android:drawable/ic_menu_my_calendar"
-        android:label="Snapsort"
+        android:label="later.exe"
         android:theme="@style/Theme.AppCompat.DayNight"
         android:usesCleartextTraffic="true">
 
@@ -41,7 +41,7 @@
                 <action android:name="android.intent.action.MAIN" />
                 <category android:name="android.intent.category.LAUNCHER" />
             </intent-filter>
-            <!-- Share a screenshot to Snapsort from the gallery / screenshot preview -->
+            <!-- Share a screenshot to later.exe from the gallery / screenshot preview -->
             <intent-filter>
                 <action android:name="android.intent.action.SEND" />
                 <category android:name="android.intent.category.DEFAULT" />

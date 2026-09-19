@@ -30,7 +30,7 @@ object Notifier {
 
     fun watcherNotification(ctx: Context) = NotificationCompat.Builder(ctx, CH_WATCHER)
         .setSmallIcon(android.R.drawable.ic_menu_camera)
-        .setContentTitle("Snapsort is watching screenshots")
+        .setContentTitle("later.exe is watching screenshots")
         .setContentText("New screenshots are checked for events")
         .setOngoing(true)
         .setContentIntent(PendingIntent.getActivity(ctx, 0, Intent(ctx, MainActivity::class.java), PendingIntent.FLAG_IMMUTABLE))
@@ -111,7 +111,7 @@ object Notifier {
     )
 
     /**
-     * A registration form was found. Tapping opens Snapsort's review screen, never the form —
+     * A registration form was found. Tapping opens later.exe's review screen, never the form —
      * nothing is pre-filled or opened until the user has seen the domain and the values (§4.6, §4.7).
      */
     fun showForm(ctx: Context, f: FormPrefill, missing: Int) {
@@ -134,7 +134,7 @@ object Notifier {
                 .setSmallIcon(android.R.drawable.ic_menu_edit)
                 .setContentTitle("Registration form found")
                 .setContentText(body)
-                .setStyle(NotificationCompat.BigTextStyle().bigText("$body\n\nSnapsort fills it in — you press Submit."))
+                .setStyle(NotificationCompat.BigTextStyle().bigText("$body\n\nlater.exe fills it in — you press Submit."))
                 .setPriority(NotificationCompat.PRIORITY_HIGH)
                 .setAutoCancel(true)
                 .setContentIntent(review)
@@ -147,7 +147,7 @@ object Notifier {
         ctx, 3,
         NotificationCompat.Builder(ctx, CH_WATCHER)
             .setSmallIcon(android.R.drawable.stat_notify_error)
-            .setContentTitle("Snapsort couldn't reach the server")
+            .setContentTitle("later.exe couldn't reach the server")
             .setContentText(msg)
             .setAutoCancel(true)
             .build(),
@@ -161,7 +161,7 @@ object Notifier {
         } else {
             OffsetDateTime.parse(p.start).toInstant().toEpochMilli() to OffsetDateTime.parse(p.end).toInstant().toEpochMilli()
         }
-        val description = listOfNotNull(p.description, p.onlineUrl, "Added by Snapsort from a screenshot").joinToString("\n")
+        val description = listOfNotNull(p.description, p.onlineUrl, "Added by later.exe from a screenshot").joinToString("\n")
         return Intent(Intent.ACTION_INSERT)
             .setData(CalendarContract.Events.CONTENT_URI)
             .putExtra(CalendarContract.EXTRA_EVENT_BEGIN_TIME, begin)

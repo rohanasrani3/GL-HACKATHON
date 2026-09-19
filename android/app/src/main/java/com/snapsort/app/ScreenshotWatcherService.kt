@@ -53,7 +53,7 @@ class ScreenshotWatcherService : Service() {
             } catch (e: CancellationException) {
                 throw e
             } catch (e: Exception) {
-                Log.w("Snapsort", "scan failed", e)
+                Log.w("later.exe", "scan failed", e)
                 store.log("❌ Scan failed: ${e.message}")
             } finally {
                 if (scope.isActive) {
@@ -158,7 +158,7 @@ class ScreenshotWatcherService : Service() {
                 ContextCompat.startForegroundService(ctx, Intent(ctx, ScreenshotWatcherService::class.java))
                 true
             } catch (e: Exception) {
-                Log.w("Snapsort", "could not restart watcher", e)
+                Log.w("later.exe", "could not restart watcher", e)
                 false
             }
         }
@@ -233,7 +233,7 @@ class ScreenshotWatcherService : Service() {
                 }
                 store.completeScreenshot(uri)
             } catch (e: Exception) {
-                Log.w("Snapsort", "analyze failed", e)
+                Log.w("later.exe", "analyze failed", e)
                 val message = e.message ?: "unknown error"
                 store.log("❌ $message")
                 store.lastError = message

@@ -37,7 +37,7 @@ async def lifespan(_: FastAPI):
     task.cancel()
 
 
-app = FastAPI(title="Snapsort", lifespan=lifespan)
+app = FastAPI(title="later.exe", lifespan=lifespan)
 
 
 API_VERSION = 1

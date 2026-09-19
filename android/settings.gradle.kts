@@ -12,5 +12,5 @@ dependencyResolutionManagement {
         mavenCentral()
     }
 }
-rootProject.name = "Snapsort"
+rootProject.name = "later.exe"
 include(":app")

@@ -1,12 +1,12 @@
 # CLAUDE.md
 
-This file guides AI coding agents (and human contributors) working on **Snapsort**, an agent that turns screenshots into actions. Start with [README.md](README.md) for the product overview and use [skills.md](skills.md) as the skill catalogue.
+This file guides AI coding agents (and human contributors) working on **later.exe**, an agent that turns screenshots into actions. Start with [README.md](README.md) for the product overview and use [skills.md](skills.md) as the skill catalogue.
 
 ---
 
 ## 1. Mental model
 
-Snapsort is a **pipeline with an agent in the middle**, not a free-roaming autonomous agent.
+later.exe is a **pipeline with an agent in the middle**, not a free-roaming autonomous agent.
 
 ```
 Watcher → Triage → Orchestrator → Skill → Policy gate → Connector → Notifier

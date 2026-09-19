@@ -252,7 +252,7 @@ async def explore_links(image_bytes: bytes, extraction: Extraction) -> tuple[lis
     """Visit the links in the screenshot to find out what it is actually about.
 
     Everything fetched is untrusted data (CLAUDE.md §4.1): it decides what we *report*, never what
-    Snapsort does. links.fetch refuses private addresses, so a link cannot reach internal hosts.
+    later.exe does. links.fetch refuses private addresses, so a link cannot reach internal hosts.
     """
     candidates = candidate_links(image_bytes, extraction)
     if not candidates:

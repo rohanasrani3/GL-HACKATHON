@@ -118,13 +118,13 @@ fun SettingsScreen(
 
             if (!batteryExempt) {
                 Text(
-                    "⚠ Android battery optimisation is on for Snapsort. It will keep killing the " +
+                    "⚠ Android battery optimisation is on for later.exe. It will keep killing the " +
                         "watcher in the background, so live scanning stops on its own.",
                     style = MaterialTheme.typography.bodySmall,
                     color = MaterialTheme.colorScheme.error,
                 )
                 OutlinedButton(onClick = onFixBackground, modifier = Modifier.fillMaxWidth()) {
-                    Text("Allow Snapsort to run in the background")
+                    Text("Allow later.exe to run in the background")
                 }
             } else {
                 Text(

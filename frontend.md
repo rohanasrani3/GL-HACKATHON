@@ -8,7 +8,7 @@
 
 ## 0. TL;DR
 
-Snapsort watches the user's **screenshots**. For each new screenshot the app:
+later.exe watches the user's **screenshots**. For each new screenshot the app:
 
 1. Sends the image to our backend: `POST /analyze`.
 2. Gets back zero or more **proposals** (calendar events), each with a `decision`:
@@ -281,13 +281,13 @@ iOS has **no** API to run code when a screenshot is taken, and **no** "screensho
    let assets = PHAsset.fetchAssets(with: .image, options: opts)
    ```
    Process them **sequentially**. On first run set `lastScanDate = now`, so the user's existing backlog is **not** processed. Advance `lastScanDate` to each asset's `creationDate` only after its request completes, and send failures to the retry queue.
-2. **Live while open (core).** Register a `PHPhotoLibraryChangeObserver`. When the library changes while the app is running, run the same scan. This is the smoothest demo: screenshot, switch back to Snapsort, and the notifications appear.
+2. **Live while open (core).** Register a `PHPhotoLibraryChangeObserver`. When the library changes while the app is running, run the same scan. This is the smoothest demo: screenshot, switch back to later.exe, and the notifications appear.
 3. **Background refresh (core).** Register `BGAppRefreshTask` id `com.snapsort.refresh`, schedule it with `earliestBeginDate = now + 15 min` after every run, and run the same scan inside. iOS decides when it actually runs (it may be hours). The ~30 s budget is too short for the real model, so in background mode **upload at most 1 screenshot per run**, and call `setTaskCompleted` before expiry.
 4. **Manual pick (core).** A "Check a screenshot" button with `PhotosPicker` (filter `.screenshots`). Uses `captured_at` = the asset's creation date if available, else now. Also needed for the demo fallback.
 5. *Stretch:* **Share Extension**, so the user can share from the screenshot preview. It writes the image and date into an App Group container; the main app processes it on next launch.
 6. *Stretch:* **App Intent** "Check latest screenshot", usable from Shortcuts or Back Tap.
 
-**Photos permission:** request `.readWrite` via `PHPhotoLibrary.requestAuthorization(for: .readWrite)`. If the result is `.limited`, show a blocking explanation card: *"Snapsort needs Full Access to see new screenshots. It only reads screenshots, never your other photos."* with a button to Settings (`UIApplication.openSettingsURLString`).
+**Photos permission:** request `.readWrite` via `PHPhotoLibrary.requestAuthorization(for: .readWrite)`. If the result is `.limited`, show a blocking explanation card: *"later.exe needs Full Access to see new screenshots. It only reads screenshots, never your other photos."* with a button to Settings (`UIApplication.openSettingsURLString`).
 
 ---
 
@@ -304,7 +304,7 @@ iOS has **no** API to run code when a screenshot is taken, and **no** "screensho
 
 - Request **full access**: `try await EKEventStore().requestFullAccessToEvents()` (iOS 17). Full access is needed for Undo, which reads the event back and removes it.
   - `.fullAccess` → auto-add allowed.
-  - `.writeOnly` or `.denied` → **never auto-add**. Every proposal becomes ASK, and ASK → Add opens `EKEventEditViewController` instead of writing silently. Show a Settings banner: "Grant full calendar access to let Snapsort add events automatically."
+  - `.writeOnly` or `.denied` → **never auto-add**. Every proposal becomes ASK, and ASK → Add opens `EKEventEditViewController` instead of writing silently. Show a Settings banner: "Grant full calendar access to let later.exe add events automatically."
 - Keep **one shared `EKEventStore`** for the app's lifetime.
 - `add(proposal) -> String?` (returns `eventIdentifier`):
   ```swift
@@ -312,7 +312,7 @@ iOS has **no** API to run code when a screenshot is taken, and **no** "screensho
   e.calendar = store.defaultCalendarForNewEvents
   e.title = p.payload.title
   e.location = p.payload.location.name ?? p.payload.location.onlineUrl
-  e.notes = [p.payload.description, p.payload.location.onlineUrl, "Added by Snapsort from a screenshot"]
+  e.notes = [p.payload.description, p.payload.location.onlineUrl, "Added by later.exe from a screenshot"]
       .compactMap { $0 }.joined(separator: "\n")
   if let url = p.payload.location.onlineUrl.flatMap(URL.init) { e.url = url }
   if p.payload.allDay {
@@ -353,7 +353,7 @@ Notification content:
 | ASK | `Add “{title}” to calendar?` | `{Fri 25 Sep, 19:30} · {location}` + newline + `Not 100% sure about this one. Add it?` |
 | Couldn't add | `Couldn't add “{title}” automatically` | `Tap to add it in Calendar` (tap → app → event editor) |
 | Processing | *No notification on iOS.* Show an in-app progress row instead. | |
-| Server unreachable | `Snapsort couldn't reach the server` | `{error}`. At most one per scan. |
+| Server unreachable | `later.exe couldn't reach the server` | `{error}`. At most one per scan. |
 
 - Date formatting: timed `EEE d MMM, HH:mm`, all-day `EEE d MMM (all day)`, in the device locale.
 - Omit ` · {location}` when the location is null.
@@ -410,10 +410,10 @@ Store the API token in the **Keychain** if time allows. UserDefaults is acceptab
 
 | Key | Value |
 |---|---|
-| `NSPhotoLibraryUsageDescription` | "Snapsort reads your new screenshots to find events. Other photos are never read or uploaded." |
-| `NSCalendarsFullAccessUsageDescription` | "Snapsort adds events it finds in your screenshots, and removes them if you tap Undo." |
-| `NSCalendarsWriteOnlyAccessUsageDescription` | "Snapsort adds events it finds in your screenshots." |
-| `NSLocalNetworkUsageDescription` | "Snapsort talks to the Snapsort server on your local network." |
+| `NSPhotoLibraryUsageDescription` | "later.exe reads your new screenshots to find events. Other photos are never read or uploaded." |
+| `NSCalendarsFullAccessUsageDescription` | "later.exe adds events it finds in your screenshots, and removes them if you tap Undo." |
+| `NSCalendarsWriteOnlyAccessUsageDescription` | "later.exe adds events it finds in your screenshots." |
+| `NSLocalNetworkUsageDescription` | "later.exe talks to the later.exe server on your local network." |
 | `NSAppTransportSecurity` → `NSAllowsArbitraryLoads` | `YES`. **Hackathon only:** the laptop backend is plain HTTP. Remove this before any release. |
 | `UIBackgroundModes` | `fetch`, `processing` |
 | `BGTaskSchedulerPermittedIdentifiers` | `["com.snapsort.refresh"]` |
@@ -425,8 +425,8 @@ Capabilities: Background Modes (Background fetch, Background processing). *Stret
 ## 11. Suggested project structure
 
 ```
-ios/Snapsort/
-  SnapsortApp.swift            // @main, registers BG task + notification categories, scenePhase → scan
+ios/later.exe/
+  later.exeApp.swift            // @main, registers BG task + notification categories, scenePhase → scan
   Models/API.swift             // §2.4 Codable models
   Services/APIClient.swift     // health(), analyze(), feedback()
   Services/ScreenshotScanner.swift  // PhotoKit fetch + change observer + image prep (§4, §5)

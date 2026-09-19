@@ -47,7 +47,7 @@ Legend: `[x]` done · `[~]` in progress · `[ ]` todo · `[!]` blocked / needs d
 - [x] `Notifier`: "Reading your screenshot…" progress; **ADDED** ("✅ Added…" + Undo/Open) and **ASK** ("Add…?" + Add/Edit/Dismiss)
 - [x] `CalendarWriter`: direct insert into the primary calendar + delete for Undo
 - [x] `ActionReceiver`: Add / Undo / Dismiss buttons + `/feedback` (no activity trampolines, Android 12+ safe)
-- [x] `MainActivity`: server URL, test connection, start/stop, pick-from-gallery test, share-to-Snapsort, activity log
+- [x] `MainActivity`: server URL, test connection, start/stop, pick-from-gallery test, share-to-later.exe, activity log
 - [ ] **Build + install on a real phone in Android Studio** (not compiled yet; no SDK on this laptop)
 
 ## Phase 3b: iOS (`/ios`, coworker + Codex)
@@ -80,7 +80,7 @@ cd backend
 "$LOCALAPPDATA/Android/Sdk/platform-tools/adb.exe" reverse tcp:8000 tcp:8000
 ```
 Server URL in the app: **`http://127.0.0.1:8000`** (the default). Re-run the `adb reverse` command after every re-plug/restart.
-- Why not Wi-Fi? Campus Wi-Fi may isolate devices, and the laptop's VPN (ProTUN, `10.2.0.2`) is **not** reachable from the phone. Wi-Fi fallback: `http://<Wi-Fi IPv4 from ipconfig>:8000`, with firewall rule "Snapsort 8000" (already added).
+- Why not Wi-Fi? Campus Wi-Fi may isolate devices, and the laptop's VPN (ProTUN, `10.2.0.2`) is **not** reachable from the phone. Wi-Fi fallback: `http://<Wi-Fi IPv4 from ipconfig>:8000`, with firewall rule "later.exe 8000" (already added).
 - Debug the app's saved settings/log: `adb shell run-as com.snapsort.app cat shared_prefs/snapsort.xml`
 
 ## Log

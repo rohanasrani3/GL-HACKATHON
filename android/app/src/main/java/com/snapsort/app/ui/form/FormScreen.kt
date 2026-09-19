@@ -29,7 +29,7 @@ import com.snapsort.app.Profile
 /**
  * Review before anything opens.
  *
- * CLAUDE.md §4.6: Snapsort pre-fills and hands back control — it never submits. §4.7: the
+ * CLAUDE.md §4.6: later.exe pre-fills and hands back control — it never submits. §4.7: the
  * resolved domain is shown before the link is opened.
  */
 @Composable
@@ -66,9 +66,9 @@ fun FormScreen(
                     Text(form.domain, style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.SemiBold)
                     Text(
                         if (form.canPrefill) {
-                            "Snapsort fills these answers in and opens the form. It never presses Submit — that stays with you."
+                            "later.exe fills these answers in and opens the form. It never presses Submit — that stays with you."
                         } else {
-                            "This page can't take answers in its link, so Snapsort opens it as-is. " +
+                            "This page can't take answers in its link, so later.exe opens it as-is. " +
                                 "Your saved details are below to copy in."
                         },
                         style = MaterialTheme.typography.bodySmall,
@@ -77,7 +77,7 @@ fun FormScreen(
                     // Never a black box: say why this was treated as a form at all.
                     if (form.reasons.isNotEmpty()) {
                         Text(
-                            "Why Snapsort thinks this is a form: " + form.reasons.joinToString("; "),
+                            "Why later.exe thinks this is a form: " + form.reasons.joinToString("; "),
                             style = MaterialTheme.typography.labelSmall,
                             color = MaterialTheme.colorScheme.onSurfaceVariant,
                         )
@@ -90,7 +90,7 @@ fun FormScreen(
                 Text("Questions", style = MaterialTheme.typography.titleMedium)
                 Text(
                     "This form builds its questions in the page, so they can't be read in advance. " +
-                        "Snapsort will open it for you to fill in.",
+                        "later.exe will open it for you to fill in.",
                     style = MaterialTheme.typography.bodySmall,
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
                 )
@@ -101,7 +101,7 @@ fun FormScreen(
             form.fields.forEach { field ->
                 val value = values[field.entryId].orEmpty()
                 val hint = when {
-                    field.sensitive -> "Snapsort never fills this in"
+                    field.sensitive -> "later.exe never fills this in"
                     field.entryId in autofilled -> "From your profile · ${Profile.label(field.profileKey ?: "")}"
                     field.profileKey != null -> "Saved to your profile for next time"
                     else -> "Not stored — specific to this form"

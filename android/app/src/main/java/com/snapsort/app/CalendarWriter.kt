@@ -51,7 +51,7 @@ object CalendarWriter {
             put(Events.CUSTOM_APP_URI, proposalUri)
             put(Events.TITLE, p.title)
             put(Events.EVENT_LOCATION, p.location ?: p.onlineUrl)
-            put(Events.DESCRIPTION, listOfNotNull(p.description, p.onlineUrl, "Added by Snapsort from a screenshot").joinToString("\n"))
+            put(Events.DESCRIPTION, listOfNotNull(p.description, p.onlineUrl, "Added by later.exe from a screenshot").joinToString("\n"))
             if (p.allDay) {
                 // All-day events must be UTC midnight-to-midnight.
                 put(Events.ALL_DAY, 1)

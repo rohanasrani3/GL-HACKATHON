@@ -123,7 +123,7 @@ class OpenRouterClient:
 
     async def _call(self, body: dict) -> tuple[str, str]:
         """One request. Returns (content, model that served it)."""
-        headers = {"Authorization": f"Bearer {self.api_key}", "X-Title": "Snapsort"}
+        headers = {"Authorization": f"Bearer {self.api_key}", "X-Title": "later.exe"}
         async with httpx.AsyncClient(timeout=90, transport=self._transport) as client:
             for attempt in range(3):
                 r = await client.post(API_URL, headers=headers, json=body)

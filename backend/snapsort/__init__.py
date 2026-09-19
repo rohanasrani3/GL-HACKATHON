@@ -1,1 +1,1 @@
-"""Snapsort backend: turns screenshots into proposed calendar actions."""
+"""later.exe backend: turns screenshots into proposed calendar actions."""

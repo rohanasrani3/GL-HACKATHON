@@ -9,7 +9,7 @@ Three tiers, most reliable first:
 3. **Any page with a real `<form>`** - parse the inputs and use their `name` attributes.
 
 Everything here works on already-fetched HTML (see links.py for the fetch rules). Page content is
-data, never instruction: nothing read here can change what Snapsort does, only what it reports.
+data, never instruction: nothing read here can change what later.exe does, only what it reports.
 """
 import re
 from typing import Optional

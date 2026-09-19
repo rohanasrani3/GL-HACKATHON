@@ -27,7 +27,7 @@ MAX_BYTES = 2 * 1024 * 1024
 MAX_REDIRECTS = 5
 TIMEOUT = 12.0
 ALLOWED_TYPES = ("text/html", "application/xhtml+xml", "text/plain")
-USER_AGENT = "Mozilla/5.0 (compatible; Snapsort/1.0; +https://github.com/rohanasrani3/GL-HACKATHON)"
+USER_AGENT = "Mozilla/5.0 (compatible; later.exe/1.0; +https://github.com/rohanasrani3/GL-HACKATHON)"
 
 
 class UnsafeUrlError(ValueError):

@@ -1,10 +1,10 @@
-# Snapsort
+# later.exe
 
-> Your screenshot folder already knows what you need to do. Snapsort acts on it.
+> Your screenshot folder already knows what you need to do. later.exe acts on it.
 
-Snapsort is an agentic AI assistant that lives in your phone's screenshot folder. Each time you take a screenshot, Snapsort checks whether it contains something worth acting on, such as an event invite, a flight confirmation, a webinar link or a deadline in a group chat. If it does, Snapsort creates the matching calendar entry, so the screenshot doesn't get lost among hundreds of others.
+later.exe is an agentic AI assistant that lives in your phone's screenshot folder. Each time you take a screenshot, later.exe checks whether it contains something worth acting on, such as an event invite, a flight confirmation, a webinar link or a deadline in a group chat. If it does, later.exe creates the matching calendar entry, so the screenshot doesn't get lost among hundreds of others.
 
-*"Snapsort" is a working name.*
+*"later.exe" is a working name.*
 
 ---
 
@@ -19,7 +19,7 @@ People screenshot things they mean to deal with later:
 
 Later rarely comes. The screenshot sits in the camera roll with no reminder attached, and the event passes. Copying the details into a calendar by hand takes a few taps each time, and people skip it.
 
-## What Snapsort does (v1: Calendar)
+## What later.exe does (v1: Calendar)
 
 1. **Watches** the device's screenshot folder for new images.
 2. **Triages** each new screenshot with a quick, cheap check: does it look like it contains an event?
@@ -38,7 +38,7 @@ Screenshots with nothing to act on, such as memes, code or chat banter, are igno
 | Screenshot | Result |
 |---|---|
 | Poster: *"Generative AI in Healthcare, 26 Sept, 4–5:30pm, Main Building LG01"* | Event created on 26 Sep, 16:00–17:30, location "Main Building LG01, HKU" |
-| Chat: *"let's do lunch tmrw 1pm?" "ok!"* | Suggestion: "Lunch" tomorrow at 13:00. Confidence is medium, so Snapsort asks before adding. |
+| Chat: *"let's do lunch tmrw 1pm?" "ok!"* | Suggestion: "Lunch" tomorrow at 13:00. Confidence is medium, so later.exe asks before adding. |
 | Meme | Ignored |
 
 ## Roadmap
@@ -57,7 +57,7 @@ The architecture is designed so that adding a new domain means adding a new **sk
 - **Privacy first.** Screenshots are sensitive. Triage runs on-device where possible. Only screenshots that pass triage are sent for full extraction, and they are not kept after processing. No screenshot is used for training.
 - **The user stays in control.** The agent never does anything irreversible without permission. Calendar adds can be undone. Payments and form submissions **always** need explicit confirmation.
 - **Silence is the default.** A useful agent only speaks up when something is worth acting on.
-- **Confidence-aware.** Every action carries a confidence score. When confidence is low, Snapsort asks instead of acting.
+- **Confidence-aware.** Every action carries a confidence score. When confidence is low, later.exe asks instead of acting.
 
 ## High-level architecture
 

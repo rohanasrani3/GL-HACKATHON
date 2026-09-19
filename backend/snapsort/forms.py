@@ -172,7 +172,7 @@ async def resolve_google_form(url: str, timeout: float = 15.0) -> Optional[FormP
         url = f"https://{url}"
     try:
         async with httpx.AsyncClient(timeout=timeout, follow_redirects=True) as client:
-            r = await client.get(url, headers={"User-Agent": "Mozilla/5.0 (Snapsort)"})
+            r = await client.get(url, headers={"User-Agent": "Mozilla/5.0 (later.exe)"})
         if r.status_code != 200:
             return None
         return parse_form_html(r.text, str(r.url))
