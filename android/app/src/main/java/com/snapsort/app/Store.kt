@@ -83,10 +83,18 @@ class Store(context: Context) {
 
     // ---- Live state behind the Home screen ----
 
-    /** Set by ScreenshotWatcherService so Home shows ACTIVE vs INACTIVE without binding to it. */
-    var watcherRunning: Boolean
-        get() = prefs.getBoolean("watcher_running", false)
-        set(v) = prefs.edit().putBoolean("watcher_running", v).apply()
+    /**
+     * Whether the user *wants* screenshots watched — not whether the service happens to be alive.
+     *
+     * These are different things, and conflating them was a bug: when Android kills the service
+     * (app reinstall, low memory, OnePlus battery management) `onDestroy` never runs, so a
+     * "running" flag stays true forever and Home claims to be watching while nothing is.
+     * Ask [ScreenshotWatcherService.isRunning] for the live answer; this is the intent that
+     * survives a restart so the watcher can be brought back up.
+     */
+    var watcherEnabled: Boolean
+        get() = prefs.getBoolean("watcher_enabled", prefs.getBoolean("watcher_running", false))
+        set(v) = prefs.edit().putBoolean("watcher_enabled", v).apply()
 
     /** When the in-flight analysis started, or 0. Drives the "Reading screenshot" row. */
     var processingSince: Long

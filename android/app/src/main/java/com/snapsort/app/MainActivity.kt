@@ -8,6 +8,8 @@ import android.graphics.Color
 import android.net.Uri
 import android.os.Build
 import android.os.Bundle
+import android.os.PowerManager
+import android.provider.Settings
 import android.widget.Toast
 import androidx.activity.ComponentActivity
 import androidx.activity.SystemBarStyle
@@ -40,6 +42,7 @@ class MainActivity : ComponentActivity() {
     private val homeState = mutableStateOf<HomeUiState?>(null)
     private val logLines = mutableStateOf<List<Pair<Long, String>>>(emptyList())
     private val watcherRunning = mutableStateOf(false)
+    private val batteryExempt = mutableStateOf(true)
     private val showSettings = mutableStateOf(false)
     private val serverUrlField = mutableStateOf("")
     private val apiTokenField = mutableStateOf("")
@@ -122,10 +125,12 @@ class MainActivity : ComponentActivity() {
                         onStopWatching = ::stopWatcher,
                         onPickImage = { saveSettings(); pickImage.launch("image/*") },
                         onBack = { showSettings.value = false },
+                        onFixBackground = ::requestBatteryExemption,
+                        batteryExempt = batteryExempt.value,
                     )
                 } else {
                     HomeScreen(
-                        state = homeState.value ?: store.toHomeUiState(),
+                        state = homeState.value ?: store.toHomeUiState(ScreenshotWatcherService.isRunning),
                         onUndo = ::undo,
                         onReview = ::confirm,
                         onOverflow = { showSettings.value = true },
@@ -140,6 +145,13 @@ class MainActivity : ComponentActivity() {
 
     override fun onResume() {
         super.onResume()
+        // Self-heal: if the user wants the watcher on but Android killed it (reinstall, low
+        // memory, OEM battery management), bring it straight back instead of silently not scanning.
+        if (store.watcherEnabled && !ScreenshotWatcherService.isRunning) {
+            if (ScreenshotWatcherService.ensureRunning(this, store)) {
+                store.log("Watcher restarted automatically")
+            }
+        }
         refresh()
     }
 
@@ -223,9 +235,12 @@ class MainActivity : ComponentActivity() {
     }
 
     private fun refresh() {
-        homeState.value = store.toHomeUiState()
+        val running = ScreenshotWatcherService.isRunning
+        homeState.value = store.toHomeUiState(running)
         logLines.value = store.logLines()
-        watcherRunning.value = store.watcherRunning
+        watcherRunning.value = running
+        batteryExempt.value = getSystemService(PowerManager::class.java)
+            ?.isIgnoringBatteryOptimizations(packageName) ?: true
     }
 
     private fun saveSettings() {
@@ -242,15 +257,39 @@ class MainActivity : ComponentActivity() {
     }
 
     private fun startWatcher() {
+        store.watcherEnabled = true // remembered, so a killed service can be restarted later
         ContextCompat.startForegroundService(this, Intent(this, ScreenshotWatcherService::class.java))
         toast("Watching. Take a screenshot of an event!")
         showSettings.value = false
+        // The service sets isRunning in onCreate; give it a moment before redrawing.
+        window.decorView.postDelayed({ refresh() }, 600)
     }
 
     private fun stopWatcher() {
+        store.watcherEnabled = false // an explicit stop is the only thing that clears the intent
         stopService(Intent(this, ScreenshotWatcherService::class.java))
-        store.watcherRunning = false // the service clears this too; be certain if it was already dead
         refresh()
+    }
+
+    /**
+     * OnePlus/Xiaomi/Samsung battery management kills foreground services within minutes.
+     * Without this exemption "live scanning" quietly stops whenever the screen is off for a while.
+     */
+    private fun requestBatteryExemption() {
+        val pm = getSystemService(PowerManager::class.java)
+        if (pm != null && pm.isIgnoringBatteryOptimizations(packageName)) {
+            toast("Already exempt from battery optimisation")
+            return
+        }
+        val intent = Intent(Settings.ACTION_REQUEST_IGNORE_BATTERY_OPTIMIZATIONS)
+            .setData(Uri.parse("package:$packageName"))
+        try {
+            startActivity(intent)
+        } catch (_: Exception) {
+            // Some OEMs hide that screen: fall back to the general battery settings page.
+            runCatching { startActivity(Intent(Settings.ACTION_IGNORE_BATTERY_OPTIMIZATION_SETTINGS)) }
+                .onFailure { toast("Open Settings > Battery and allow Snapsort to run in the background") }
+        }
     }
 
     private fun testConnection() = thread {
