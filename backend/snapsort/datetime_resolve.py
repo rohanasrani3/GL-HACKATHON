@@ -39,6 +39,31 @@ def _normalise(text: str) -> str:
     return text
 
 
+_MONTHS = r"jan|feb|mar|apr|may|jun|jul|aug|sep|sept|oct|nov|dec"
+_DATE_WORDS = re.compile(
+    rf"\b({_MONTHS})[a-z]*\b|\b(mon|tue|wed|thu|fri|sat|sun)[a-z]*\b"
+    r"|\b(today|tomorrow|tonight|yesterday|tmrw|tmr|tdy|next|this|ago|weekend)\b"
+    r"|\b\d+\s*(day|week|month|year)s?\b"
+    r"|\d{1,4}\s*[/.\-]\s*\d{1,2}",
+    re.I,
+)
+_TIME = re.compile(r"\b\d{1,2}(?::\d{2})?\s*(?:am|pm|a\.m\.|p\.m\.)|\b\d{1,2}:\d{2}\b", re.I)
+
+
+def has_date_content(text: Optional[str]) -> bool:
+    """False for time-only strings like '6:00 pm'. The model sometimes puts end *times* in end *date* fields."""
+    return bool(text) and bool(_DATE_WORDS.search(_TIME.sub(" ", text)))
+
+
+def _clean_for_parse(text: str) -> str:
+    """'September 19, 2026 (Sat); 8:30 am – 6:00 pm' -> 'September 19, 2026'."""
+    text = re.sub(r"\([^)]*\)", " ", text)       # (Sat)
+    text = re.split(r"[;|•·]", text)[0]           # everything after a separator
+    text = _TIME.sub(" ", text)                   # clock times
+    text = re.sub(r"\s*(?:-|–|—|to)\s*$", " ", text.strip())  # dangling "–" left by removed times
+    return re.sub(r"\s+", " ", text).strip(" ,")
+
+
 def _date_order(locale: str) -> str:
     region = locale.replace("_", "-").split("-")[-1].upper() if locale else ""
     return "DMY" if region in DMY_REGIONS else "MDY"
@@ -51,18 +76,23 @@ def resolve_date(date_text: Optional[str], date_guess: Optional[str], anchor: da
     guess: Optional[date] = None
     notes: list[str] = []
 
+    if date_text and not has_date_content(date_text):
+        notes.append("text_has_no_date")  # e.g. "6:00 pm": don't let dateparser turn a time into "next day"
+        date_text = None
+
     if date_text:
-        dt = dateparser.parse(
-            _normalise(date_text),
-            settings={
-                "RELATIVE_BASE": anchor_naive,
-                "PREFER_DATES_FROM": "future",
-                "DATE_ORDER": _date_order(locale),
-                "PREFER_DAY_OF_MONTH": "first",
-            },
-        )
-        if dt:
-            parsed = dt.date()
+        settings = {
+            "RELATIVE_BASE": anchor_naive,
+            "PREFER_DATES_FROM": "future",
+            "DATE_ORDER": _date_order(locale),
+            "PREFER_DAY_OF_MONTH": "first",
+        }
+        # Try the cleaned phrase first (drops "(Sat); 8:30 am – 6:00 pm"), then the raw one.
+        for candidate in dict.fromkeys([_clean_for_parse(date_text), date_text]):
+            dt = dateparser.parse(_normalise(candidate), settings=settings) if candidate else None
+            if dt:
+                parsed = dt.date()
+                break
 
     if date_guess:
         try:

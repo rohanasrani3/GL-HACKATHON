@@ -21,6 +21,8 @@ data class ActivityRecord(
     val timestamp: Long = System.currentTimeMillis(),
     val eventId: Long? = null,
     val proposalJson: String? = null,
+    /** "calendar" or "form" — decides the destination chip and what Review does. */
+    val kind: String = CALENDAR_KIND,
 ) {
     fun toJson(): JSONObject = JSONObject()
         .put("id", id)
@@ -31,6 +33,7 @@ data class ActivityRecord(
         .put("timestamp", timestamp)
         .put("eventId", eventId ?: JSONObject.NULL)
         .put("proposalJson", proposalJson ?: JSONObject.NULL)
+        .put("kind", kind)
 
     companion object {
         fun fromJson(o: JSONObject) = ActivityRecord(
@@ -42,7 +45,11 @@ data class ActivityRecord(
             timestamp = o.optLong("timestamp"),
             eventId = if (o.isNull("eventId")) null else o.getLong("eventId"),
             proposalJson = o.optStringOrNull("proposalJson"),
+            kind = o.optString("kind", CALENDAR_KIND).ifBlank { CALENDAR_KIND },
         )
+
+        const val CALENDAR_KIND = "calendar"
+        const val FORM_KIND = "form"
 
         // Status values mirror com.snapsort.app.home.ActivityStatus, kept as plain strings so
         // this storage layer stays free of UI types.
@@ -61,7 +68,8 @@ class Store(context: Context) {
     private val prefs = context.getSharedPreferences("snapsort", Context.MODE_PRIVATE)
 
     var serverUrl: String
-        get() = prefs.getString("server_url", "http://127.0.0.1:8000")!! // via `adb reverse tcp:8000 tcp:8000` (USB phone or emulator)
+        // Deployed backend. For a laptop backend use http://127.0.0.1:8000 with `adb reverse tcp:8000 tcp:8000`.
+        get() = prefs.getString("server_url", "https://gl-hackathon.onrender.com")!!
         set(v) = prefs.edit().putString("server_url", v.trimEnd('/')).apply()
 
     var apiToken: String
@@ -75,10 +83,18 @@ class Store(context: Context) {
 
     // ---- Live state behind the Home screen ----
 
-    /** Set by ScreenshotWatcherService so Home shows ACTIVE vs INACTIVE without binding to it. */
-    var watcherRunning: Boolean
-        get() = prefs.getBoolean("watcher_running", false)
-        set(v) = prefs.edit().putBoolean("watcher_running", v).apply()
+    /**
+     * Whether the user *wants* screenshots watched — not whether the service happens to be alive.
+     *
+     * These are different things, and conflating them was a bug: when Android kills the service
+     * (app reinstall, low memory, OnePlus battery management) `onDestroy` never runs, so a
+     * "running" flag stays true forever and Home claims to be watching while nothing is.
+     * Ask [ScreenshotWatcherService.isRunning] for the live answer; this is the intent that
+     * survives a restart so the watcher can be brought back up.
+     */
+    var watcherEnabled: Boolean
+        get() = prefs.getBoolean("watcher_enabled", prefs.getBoolean("watcher_running", false))
+        set(v) = prefs.edit().putBoolean("watcher_enabled", v).apply()
 
     /** When the in-flight analysis started, or 0. Drives the "Reading screenshot" row. */
     var processingSince: Long

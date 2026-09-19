@@ -11,11 +11,15 @@ import com.snapsort.app.Store
  */
 
 private val CALENDAR = ToolDestination(label = "Google Calendar", symbol = "G")
+private val FORM = ToolDestination(label = "Google Forms", symbol = "≡")
 
 /** Statuses that belong in the "needs input" section rather than the receipt list. */
 private const val ATTENTION = ActivityRecord.NEEDS_ATTENTION
 
-fun Store.toHomeUiState(now: Long = System.currentTimeMillis()): HomeUiState {
+fun Store.toHomeUiState(
+    watcherRunning: Boolean,
+    now: Long = System.currentTimeMillis(),
+): HomeUiState {
     val records = activities()
     val processingSince = this.processingSince
 
@@ -32,14 +36,14 @@ fun Store.toHomeUiState(now: Long = System.currentTimeMillis()): HomeUiState {
     }
 
     return HomeUiState(
-        agentStatus = agentStatus(processingSince > 0L, now),
+        agentStatus = agentStatus(processingSince > 0L, watcherRunning, now),
         processingItem = processingItem,
         needsAttention = records.filter { it.status == ATTENTION }.map { it.toItem(now) },
         recentActivity = records.filter { it.status != ATTENTION }.map { it.toItem(now) },
     )
 }
 
-private fun Store.agentStatus(processing: Boolean, now: Long): AgentStatus = when {
+private fun Store.agentStatus(processing: Boolean, watcherRunning: Boolean, now: Long): AgentStatus = when {
     processing -> AgentStatus(
         kind = AgentStatusKind.PROCESSING,
         primaryText = "Reading screenshot",
@@ -58,6 +62,14 @@ private fun Store.agentStatus(processing: Boolean, now: Long): AgentStatus = whe
         secondaryText = if (lastScanAt > 0L) "Last scan · ${relativeLabel(now - lastScanAt)}" else "Waiting for the first scan",
     )
 
+    // Enabled but not actually running means the OS killed the service (OEM battery management is
+    // the usual culprit). Say that, rather than pretending it is still watching.
+    watcherEnabled -> AgentStatus(
+        kind = AgentStatusKind.OFFLINE,
+        primaryText = "Watcher was stopped by Android",
+        secondaryText = "Open Settings to restart it",
+    )
+
     else -> AgentStatus(
         kind = AgentStatusKind.INACTIVE,
         primaryText = "Screenshot monitoring stopped",
@@ -69,7 +81,11 @@ private fun ActivityRecord.toItem(now: Long) = ActivityItem(
     id = id,
     title = title,
     status = runCatching { ActivityStatus.valueOf(status) }.getOrDefault(ActivityStatus.EXECUTED),
-    destination = if (status == ActivityRecord.EXECUTED || status == ActivityRecord.NEEDS_ATTENTION) CALENDAR else null,
+    destination = when {
+        kind == ActivityRecord.FORM_KIND -> FORM
+        status == ActivityRecord.EXECUTED || status == ActivityRecord.NEEDS_ATTENTION -> CALENDAR
+        else -> null
+    },
     summary = summary,
     eventTime = eventTime,
     activityTimestamp = relativeLabel(now - timestamp),

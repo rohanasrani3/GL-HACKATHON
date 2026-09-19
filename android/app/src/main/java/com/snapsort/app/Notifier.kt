@@ -110,6 +110,39 @@ object Notifier {
             .build(),
     )
 
+    /**
+     * A registration form was found. Tapping opens Snapsort's review screen, never the form —
+     * nothing is pre-filled or opened until the user has seen the domain and the values (§4.6, §4.7).
+     */
+    fun showForm(ctx: Context, f: FormPrefill, missing: Int) {
+        val review = PendingIntent.getActivity(
+            ctx, f.notificationId,
+            Intent(ctx, MainActivity::class.java)
+                .setAction(MainActivity.ACTION_REVIEW_FORM)
+                .putExtra(MainActivity.EXTRA_FORM, f.json)
+                .addFlags(Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_CLEAR_TOP),
+            FLAGS,
+        )
+        val body = if (missing > 0) {
+            "${f.fields.size} questions · $missing need you · ${f.domain}"
+        } else {
+            "${f.fields.size} questions · ready to pre-fill · ${f.domain}"
+        }
+        notify(
+            ctx, f.notificationId,
+            NotificationCompat.Builder(ctx, CH_EVENTS)
+                .setSmallIcon(android.R.drawable.ic_menu_edit)
+                .setContentTitle("Registration form found")
+                .setContentText(body)
+                .setStyle(NotificationCompat.BigTextStyle().bigText("$body\n\nSnapsort fills it in — you press Submit."))
+                .setPriority(NotificationCompat.PRIORITY_HIGH)
+                .setAutoCancel(true)
+                .setContentIntent(review)
+                .addAction(android.R.drawable.ic_menu_edit, "Review", review)
+                .build(),
+        )
+    }
+
     fun showError(ctx: Context, msg: String) = notify(
         ctx, 3,
         NotificationCompat.Builder(ctx, CH_WATCHER)
@@ -141,7 +174,14 @@ object Notifier {
     }
 
     fun prettyWhen(p: Proposal): String = if (p.allDay) {
-        LocalDate.parse(p.start).format(DateTimeFormatter.ofPattern("EEE d MMM")) + " (all day)"
+        val start = LocalDate.parse(p.start)
+        val last = LocalDate.parse(p.end).minusDays(1) // backend end date is exclusive
+        if (last.isAfter(start)) {
+            val startFmt = if (start.month == last.month) "EEE d" else "EEE d MMM"
+            "${start.format(DateTimeFormatter.ofPattern(startFmt))} – ${last.format(DateTimeFormatter.ofPattern("EEE d MMM"))}"
+        } else {
+            start.format(DateTimeFormatter.ofPattern("EEE d MMM")) + " (all day)"
+        }
     } else {
         OffsetDateTime.parse(p.start).format(DateTimeFormatter.ofPattern("EEE d MMM, HH:mm"))
     }

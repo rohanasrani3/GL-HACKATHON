@@ -45,6 +45,15 @@ class Extraction(BaseModel):
         description="Every date or date range written anywhere in the screenshot, copied exactly, e.g. ['20 Sept 2026 (Sun)', '12-16 October 2026']",
     )
     events: list[RawEvent] = Field(description="One event per distinct date or date range in dates_seen that is an event, deadline or appointment")
+    # v3 (form autofill): the model only *reports* the link. Deterministic code fetches the form
+    # and reads its real field ids, and the device fills the values (CLAUDE.md D3, §2.8, §4.3).
+    form_url: Optional[str] = Field(
+        default=None,
+        description=(
+            "If the screenshot shows a registration / signup form link (a Google Forms URL, a forms.gle "
+            "short link, or such a link in a browser address bar), copy it exactly as written. null if none."
+        ),
+    )
     skipped_reason: Optional[str] = Field(description="If actionable is false, a few words on why, else null")
 
 
@@ -78,8 +87,45 @@ class Proposal(BaseModel):
     notes: list[str] = []  # why confidence was adjusted, for debugging and evals
 
 
+# Canonical keys for the on-device profile (CLAUDE.md §2.8). The backend only ever names these;
+# the values live on the phone and are never sent here.
+PROFILE_KEYS = (
+    "full_name", "email", "phone", "age", "location",
+    "organisation", "student_id", "dietary", "website",
+)
+
+
+class FormField(BaseModel):
+    entry_id: str  # Google Forms prefill parameter, e.g. "entry.1046611833"
+    question: str
+    profile_key: Optional[str] = None  # which profile field answers this; null = ask the user
+    required: bool = False
+    type: str = "short_text"
+    options: list[str] = []
+
+
+class FormPayload(BaseModel):
+    form_url: str  # public /viewform URL; the device appends the prefill query itself
+    title: Optional[str] = None
+    domain: str  # shown to the user before anything opens (CLAUDE.md §4.7)
+    fields: list[FormField]
+
+
+class FormProposal(BaseModel):
+    id: str
+    action: Literal["form.prefill"] = "form.prefill"
+    # Forms are never auto-filled-and-submitted: §4.6 and D8 make this always a confirmation.
+    decision: Literal["ask"] = "ask"
+    payload: FormPayload
+    confidence: float
+    evidence: str
+    notes: list[str] = []
+
+
 class AnalyzeResponse(BaseModel):
     proposals: list[Proposal]
+    # Additive on purpose: existing clients that only read `proposals` keep working unchanged.
+    forms: list[FormProposal] = []
     genre: Optional[str] = None
     skipped_reason: Optional[str] = None
     model: str

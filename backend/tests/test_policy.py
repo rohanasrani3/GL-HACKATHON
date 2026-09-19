@@ -91,3 +91,22 @@ def test_absurd_range_ignored_and_asks():
     end = NEXT_WEEK + timedelta(days=120)
     p = to_proposal(event(end_date_text=end.strftime("%d %B %Y"), end_date_guess=end.isoformat()), "poster", NOW, HK, "en-HK")
     assert not p.payload.all_day and p.decision == "ask"
+
+
+def test_end_time_in_end_date_field_stays_single_day():
+    # Regression: model put "6:00 pm" in end_date_text; it used to become a 2-day event.
+    p = to_proposal(event(end_date_text="6:00 pm", end_date_guess=NEXT_WEEK.isoformat(),
+                          start_time="08:30", end_time="18:00"), "poster", NOW, HK, "en-HK")
+    assert not p.payload.all_day
+    assert p.payload.start.startswith(NEXT_WEEK.isoformat() + "T08:30")
+    assert p.payload.end.startswith(NEXT_WEEK.isoformat() + "T18:00")
+
+
+def test_finished_today_event_dropped():
+    earlier = (NOW - timedelta(hours=6))
+    if earlier.date() != NOW.date():
+        return  # test only meaningful when 6h ago is still today
+    p = to_proposal(event(date_text=NOW.strftime("%B %d, %Y (%a); 8:30 am – %I:%M %p"), date_guess=NOW.date().isoformat(),
+                          end_date_text=earlier.strftime("%I:%M %p"), end_date_guess=NOW.date().isoformat(),
+                          start_time="00:00", end_time=earlier.strftime("%H:%M")), "poster", NOW, HK, "en-HK")
+    assert p is None

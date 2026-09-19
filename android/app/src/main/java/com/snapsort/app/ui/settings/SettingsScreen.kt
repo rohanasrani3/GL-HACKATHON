@@ -43,6 +43,8 @@ fun SettingsScreen(
     onStopWatching: () -> Unit,
     onPickImage: () -> Unit,
     onBack: () -> Unit,
+    onFixBackground: () -> Unit,
+    batteryExempt: Boolean,
     modifier: Modifier = Modifier,
 ) {
     Surface(modifier = modifier.fillMaxSize(), color = MaterialTheme.colorScheme.background) {
@@ -71,7 +73,7 @@ fun SettingsScreen(
             OutlinedTextField(
                 value = serverUrl,
                 onValueChange = onServerUrlChange,
-                label = { Text("Laptop server URL") },
+                label = { Text("Server URL") },
                 singleLine = true,
                 modifier = Modifier.fillMaxWidth(),
             )
@@ -79,7 +81,7 @@ fun SettingsScreen(
             OutlinedTextField(
                 value = apiToken,
                 onValueChange = onApiTokenChange,
-                label = { Text("API token (optional)") },
+                label = { Text("API token") },
                 singleLine = true,
                 modifier = Modifier.fillMaxWidth(),
             )
@@ -112,6 +114,24 @@ fun SettingsScreen(
                 ) {
                     Text("▶  Start watching screenshots")
                 }
+            }
+
+            if (!batteryExempt) {
+                Text(
+                    "⚠ Android battery optimisation is on for Snapsort. It will keep killing the " +
+                        "watcher in the background, so live scanning stops on its own.",
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.error,
+                )
+                OutlinedButton(onClick = onFixBackground, modifier = Modifier.fillMaxWidth()) {
+                    Text("Allow Snapsort to run in the background")
+                }
+            } else {
+                Text(
+                    "✓ Exempt from battery optimisation — the watcher can stay alive.",
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                )
             }
 
             OutlinedButton(onClick = onPickImage, modifier = Modifier.fillMaxWidth()) {
