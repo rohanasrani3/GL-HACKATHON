@@ -75,7 +75,13 @@ cd backend
 .venv/Scripts/python ../evals/run.py
 ```
 
-**Android:** open `/android` in Android Studio → let it sync (it'll offer to create the Gradle wrapper) → Run on your phone → enter `http://<laptop IP>:8000` → *Save & test connection* → *Start watching*. The laptop IP comes from `ipconfig` on the hotspot or Tailscale interface. Allow port 8000 through Windows Firewall.
+**Android:** open `/android` in Android Studio → Run on the phone (USB debugging on) or an emulator. Then connect the phone to the laptop with the **USB tunnel**:
+```bash
+"$LOCALAPPDATA/Android/Sdk/platform-tools/adb.exe" reverse tcp:8000 tcp:8000
+```
+Server URL in the app: **`http://127.0.0.1:8000`** (the default). Re-run the `adb reverse` command after every re-plug/restart.
+- Why not Wi-Fi? Campus Wi-Fi may isolate devices, and the laptop's VPN (ProTUN, `10.2.0.2`) is **not** reachable from the phone. Wi-Fi fallback: `http://<Wi-Fi IPv4 from ipconfig>:8000`, with firewall rule "Snapsort 8000" (already added).
+- Debug the app's saved settings/log: `adb shell run-as com.snapsort.app cat shared_prefs/snapsort.xml`
 
 ## Log
 - 17:35: Started. Environment checked. Started Ollama.
@@ -86,3 +92,4 @@ cd backend
 - 18:10: Paused. Resume: (1) decide on model speed (download gemma4:e2b-it-qat / use Claude / bigger GPU), (2) build Android app in Android Studio, (3) end-to-end test. Nothing committed yet.
 - Resumed. New requirements: auto-add confident events and notify afterwards; ask first for unclear ones. Backend now returns `decision` + `id`, has `/feedback` and a mock provider (21/21 tests). Android updated (CalendarWriter, ActionReceiver, new notifications). Wrote frontend.md for the iOS coworker. **Still open:** model speed decision (download gemma4:e2b-it-qat?), Android build in Android Studio.
 - 20:15: User installed `gemma4:e2b-it-qat`. Evals 5/5, median 8.8 s (8× faster). Now the default. Added a 5xx retry. **Next:** Android build in Android Studio, then phone ↔ laptop end-to-end.
+- 22:35: Physical phone (OnePlus Nord CE) connected. "Failed to connect" was the app URL set to the VPN IP 10.2.0.2. Fixed via `adb reverse` + `http://127.0.0.1:8000` (now the app default).
