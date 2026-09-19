@@ -51,6 +51,25 @@ jobs:
             CODE_SIGNING_ALLOWED=NO 2>&1 | tee xcodebuild.log | grep -E "error:|warning: .*Snapsort|Test Case|Executed|BUILD|TEST" || true
           grep -q "TEST SUCCEEDED" xcodebuild.log
 
+      # Unsigned build for a real iPhone. Sideloadly (Windows) signs it with your Apple ID when installing.
+      - name: Build iPhone .ipa (unsigned)
+        run: |
+          set -o pipefail
+          xcodebuild build \
+            -project ios/Snapsort.xcodeproj -scheme Snapsort -configuration Release \
+            -sdk iphoneos -destination "generic/platform=iOS" -derivedDataPath build-device \
+            CODE_SIGNING_ALLOWED=NO CODE_SIGNING_REQUIRED=NO CODE_SIGN_IDENTITY="" 2>&1 | tail -5
+          mkdir -p ipa/Payload
+          cp -R build-device/Build/Products/Release-iphoneos/Snapsort.app ipa/Payload/
+          (cd ipa && zip -qry ../Snapsort.ipa Payload)
+          ls -lh Snapsort.ipa
+
+      - name: Upload .ipa
+        uses: actions/upload-artifact@v4
+        with:
+          name: Snapsort-ipa
+          path: Snapsort.ipa
+
       - uses: actions/setup-python@v5
         with:
           python-version: "3.12"
