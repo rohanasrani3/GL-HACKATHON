@@ -1,21 +1,35 @@
+import CoreImage
 import Foundation
 import Vision
 
-/// On-device QR decoding (Apple Vision). A QR code carries the exact link, while reading a printed
-/// URL off a poster is error-prone, and the backend only sees a downscaled copy.
+/// On-device QR decoding. A QR code carries the exact link, while reading a printed URL off a
+/// poster is error-prone, and the backend only sees a downscaled copy.
 enum QRCodes {
     /// Every http(s) link encoded in a QR code in the image. Never throws; [] if none or unreadable.
     static func urls(in imageData: Data) -> [String] {
+        guard let image = CIImage(data: imageData) else { return [] }
+        // CoreImage's detector needs no Neural Engine, so it also works in the Simulator (CI).
+        // Vision is the fallback: it copes better with small or skewed codes on a real phone.
+        var payloads = coreImage(image)
+        if payloads.isEmpty { payloads = vision(image) }
+        var seen = Set<String>()
+        return payloads
+            .map { $0.trimmingCharacters(in: .whitespacesAndNewlines) }
+            .filter { $0.lowercased().hasPrefix("http://") || $0.lowercased().hasPrefix("https://") }
+            .filter { seen.insert($0).inserted }
+    }
+
+    private static func coreImage(_ image: CIImage) -> [String] {
+        let detector = CIDetector(ofType: CIDetectorTypeQRCode, context: nil,
+                                  options: [CIDetectorAccuracy: CIDetectorAccuracyHigh])
+        return (detector?.features(in: image) ?? []).compactMap { ($0 as? CIQRCodeFeature)?.messageString }
+    }
+
+    private static func vision(_ image: CIImage) -> [String] {
         let request = VNDetectBarcodesRequest()
         request.symbologies = [.qr]
-        do {
-            try VNImageRequestHandler(data: imageData, options: [:]).perform([request])
-        } catch {
-            return []
-        }
-        return (request.results ?? [])
-            .compactMap { $0.payloadStringValue?.trimmingCharacters(in: .whitespacesAndNewlines) }
-            .filter { $0.lowercased().hasPrefix("http://") || $0.lowercased().hasPrefix("https://") }
+        guard (try? VNImageRequestHandler(ciImage: image, options: [:]).perform([request])) != nil else { return [] }
+        return (request.results ?? []).compactMap(\.payloadStringValue)
     }
 }
 

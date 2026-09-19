@@ -239,7 +239,7 @@ final class QRDemoFormTests: XCTestCase {
     private func posterJPEG(qr text: String) throws -> Data {
         let filter = CIFilter.qrCodeGenerator()
         filter.message = Data(text.utf8)
-        let code = try XCTUnwrap(filter.outputImage).transformed(by: CGAffineTransform(scaleX: 12, y: 12))
+        let code = try XCTUnwrap(filter.outputImage).samplingNearest().transformed(by: CGAffineTransform(scaleX: 12, y: 12))
         let cg = try XCTUnwrap(CIContext().createCGImage(code, from: code.extent))
         let size = CGSize(width: 1080, height: 1600)
         let format = UIGraphicsImageRendererFormat()
