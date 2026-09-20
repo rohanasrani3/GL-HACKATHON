@@ -28,15 +28,28 @@ class ResolvedDate:
     penalty: float = 0.0
 
 
+# Shared by both pre-parse pipelines below (_clean_for_parse and split_range).
+_ORDINALS = re.compile(r"(\d+)(st|nd|rd|th)\b")
+_PARENTHETICAL = re.compile(r"\([^)]*\)")
+
+
+def _strip_ordinals(text: str) -> str:
+    """'26th September' -> '26 September'. dateparser handles the suffix inconsistently."""
+    return _ORDINALS.sub(r"\1", text)
+
+
+def _strip_parentheticals(text: str) -> str:
+    """'19 September (Sat)' -> '19 September'. The aside is never the date we want."""
+    return _PARENTHETICAL.sub(" ", text)
+
+
 def _normalise(text: str) -> str:
     text = text.lower().strip()
     for pattern, repl in SLANG.items():
         text = re.sub(pattern, repl, text)
     # "this friday" -> "friday" (dateparser + PREFER_DATES_FROM=future handles bare weekdays)
     text = re.sub(r"\bthis\s+(?=mon|tue|wed|thu|fri|sat|sun)", "", text)
-    # Drop ordinal suffixes: 26th -> 26
-    text = re.sub(r"(\d+)(st|nd|rd|th)\b", r"\1", text)
-    return text
+    return _strip_ordinals(text)
 
 
 _MONTHS = r"jan|feb|mar|apr|may|jun|jul|aug|sep|sept|oct|nov|dec"
@@ -57,7 +70,7 @@ def has_date_content(text: Optional[str]) -> bool:
 
 def _clean_for_parse(text: str) -> str:
     """'September 19, 2026 (Sat); 8:30 am – 6:00 pm' -> 'September 19, 2026'."""
-    text = re.sub(r"\([^)]*\)", " ", text)       # (Sat)
+    text = _strip_parentheticals(text)
     text = re.split(r"[;|•·]", text)[0]           # everything after a separator
     text = _TIME.sub(" ", text)                   # clock times
     text = re.sub(r"\s*(?:-|–|—|to)\s*$", " ", text.strip())  # dangling "–" left by removed times
@@ -130,8 +143,7 @@ def split_range(text: Optional[str]) -> Optional[tuple[str, str]]:
     """'12 - 16 October 2026 (Monday - Friday)' -> ('12 October 2026', '16 October 2026'). None if not a range."""
     if not text:
         return None
-    cleaned = re.sub(r"\([^)]*\)", " ", text)  # drop "(Monday - Friday)"
-    cleaned = re.sub(r"(\d+)(st|nd|rd|th)\b", r"\1", cleaned)
+    cleaned = _strip_ordinals(_strip_parentheticals(text))  # "12-16 Oct (Mon - Fri)" -> "12-16 Oct"
     for pattern, build in _RANGE_PATTERNS:
         m = pattern.search(cleaned)
         if not m:

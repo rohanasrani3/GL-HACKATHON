@@ -38,8 +38,6 @@ class UnsafeUrlError(ValueError):
 class FetchedPage:
     url: str  # final URL after redirects
     html: str
-    content_type: str
-    title: Optional[str] = None
 
 
 def _public_ip(host: str) -> None:
@@ -126,7 +124,7 @@ async def fetch(url: str, timeout: float = TIMEOUT) -> Optional[FetchedPage]:
                     html = body.decode(r.encoding or "utf-8", errors="replace")
                 except (LookupError, UnicodeDecodeError):
                     html = body.decode("utf-8", errors="replace")
-                return FetchedPage(url=str(r.url), html=html, content_type=ctype or "text/html")
+                return FetchedPage(url=str(r.url), html=html)
     except httpx.HTTPError:
         return None
     return None

@@ -11,10 +11,15 @@ android/build/
 android/app/build/
 android/local.properties
 android/.idea/
+android/.kotlin/
 *.apk
 
 # IDE (repo root, e.g. IntelliJ/PyCharm opened on the project root)
 .idea/
+
+# OS clutter (the iOS side of the team is on macOS)
+.DS_Store
+Thumbs.db
 
 # Evals: real screenshots may contain personal data, keep them out of git
 evals/screenshots/real/

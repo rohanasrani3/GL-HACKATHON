@@ -14,7 +14,7 @@ from PIL import Image
 
 from .config import settings
 from .datetime_resolve import DEFAULT_DURATION, parse_hhmm, resolve_date, split_range
-from .formdetect import detect_form, form_likelihood, page_meta
+from .formdetect import form_likelihood, read_page
 from .forms import qr_urls
 from .links import UnsafeUrlError, normalise
 from .links import fetch as fetch_page
@@ -65,7 +65,7 @@ def build_user_prompt(captured_at: datetime, locale: str) -> str:
 MAX_RANGE_DAYS = 31  # longer "events" are usually misreads (or semesters nobody wants as one block)
 
 
-def decide(confidence: float, notes: list[str]) -> str:
+def decide(confidence: float) -> str:
     """Policy gate (CLAUDE.md §2.5): confidence alone decides whether to add or ask.
 
     Signals like `parser_model_disagree` or `no_time_all_day` used to force "ask" even at high
@@ -163,7 +163,7 @@ def to_proposal(ev: RawEvent, genre: str, captured_at: datetime, tz: ZoneInfo, l
     confidence = round(max(0.0, confidence), 2)
     return Proposal(
         id=hashlib.sha1(f"{ev.title.strip().lower()}|{start_s}".encode()).hexdigest()[:12],
-        decision=decide(confidence, notes),
+        decision=decide(confidence),
         payload=CalendarPayload(
             title=ev.title.strip()[:120],
             start=start_s,
@@ -268,14 +268,14 @@ async def explore_links(image_bytes: bytes, extraction: Extraction) -> tuple[lis
             unreachable = True
             contexts.append(LinkContext(url=url, domain=urlparse(url).netloc, source=source))
             continue
-        payload = detect_form(page)
-        title, description = page_meta(page.html)
+        facts = read_page(page)  # one parse per page, reused for both the form and the context
+        payload = facts.form
         contexts.append(
             LinkContext(
                 url=page.url,
                 domain=urlparse(page.url).netloc,
-                title=title,
-                description=(description or "")[:300] or None,
+                title=facts.title,
+                description=(facts.description or "")[:300] or None,
                 is_form=payload is not None,
                 source=source,
             )

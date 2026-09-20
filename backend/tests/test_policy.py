@@ -58,16 +58,17 @@ def test_same_event_same_id():
 
 def test_decide_thresholds():
     """Confidence alone decides: at or above the threshold it adds, below it asks."""
-    assert decide(0.6, []) == "auto_add"
-    assert decide(0.59, []) == "ask"
-    assert decide(1.0, []) == "auto_add"
+    assert decide(0.6) == "auto_add"
+    assert decide(0.59) == "ask"
+    assert decide(1.0) == "auto_add"
 
 
-def test_unclear_notes_no_longer_force_a_confirmation():
-    """Those signals already cost confidence in to_proposal(); charging for them twice meant
-    confident events still interrupted the user."""
-    assert decide(0.9, ["model_guess_only", "parser_model_disagree", "no_time_all_day"]) == "auto_add"
-    assert decide(0.4, ["model_guess_only"]) == "ask"
+def test_unclear_signals_do_not_force_a_confirmation():
+    """Signals like `no_time_all_day` already cost confidence inside to_proposal(). Charging for
+    them a second time at the gate meant confident events still interrupted the user."""
+    p = to_proposal(event(start_time=None, end_time=None), "poster", NOW, HK, "en-HK")
+    assert "no_time_all_day" in p.notes
+    assert p.decision == "auto_add"
 
 
 # ---- multi-day ----

@@ -1,13 +1,20 @@
+# --- API ---
 fastapi>=0.115
 uvicorn[standard]>=0.30
-python-multipart>=0.0.9
-httpx>=0.27
+python-multipart>=0.0.9   # FastAPI needs this to parse the multipart upload in /analyze
 pydantic>=2.8
-dateparser>=1.2
+
+# --- Model clients ---
+httpx>=0.27
+anthropic>=0.60           # only used when MODEL_PROVIDER=claude
+
+# --- Screenshot + link understanding ---
 pillow>=10.4
-tzdata>=2024.1
-anthropic>=0.60
-pytest>=8.3
-zxing-cpp>=2.2
-qrcode>=7.4  # test fixtures only
+zxing-cpp>=2.2            # QR decoding; a QR carries the exact bytes an OCR'd form id gets wrong
 beautifulsoup4>=4.12
+dateparser>=1.2
+tzdata>=2024.1            # data-only: backs zoneinfo.ZoneInfo on Windows
+
+# --- Tests ---
+pytest>=8.3
+anyio>=4.0                # supplies the @pytest.mark.anyio plugin used by tests/test_forms.py

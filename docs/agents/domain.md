@@ -2,15 +2,14 @@
 
 ## Layout
 
-This repository uses one root `CONTEXT.md` and `docs/adr/`
-for architectural decisions.
+This repository keeps its domain vocabulary and invariants in
+the root `CONTEXT.md`. Architectural decisions live in the
+decision table in `CLAUDE.md` §3, not in a separate `docs/adr/`.
 
 ## Before exploring
 
-Read `CONTEXT.md` and any ADRs relevant to the work.
-If these files or directories are absent, proceed silently.
-The domain-modeling skill creates them when terms or
-decisions are resolved.
+Read `CONTEXT.md`, then `CLAUDE.md` §3 for the decisions behind
+the current design.
 
 ## Vocabulary and decisions
 
@@ -18,5 +17,6 @@ Use domain terms as defined in `CONTEXT.md`.
 Reconsider unfamiliar terminology or record a gap for
 domain-modeling.
 
-Explicitly flag proposals that conflict with an existing ADR,
-identifying the decision and why it should be reconsidered.
+Explicitly flag proposals that conflict with a decision in
+`CLAUDE.md` §3, identifying the decision and why it should be
+reconsidered.

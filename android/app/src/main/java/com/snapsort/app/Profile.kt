@@ -16,28 +16,17 @@ class Profile(context: Context) {
 
     operator fun get(key: String): String? = prefs.getString(key, null)?.takeIf { it.isNotBlank() }
 
-    operator fun set(key: String, value: String) {
-        if (value.isBlank()) prefs.edit().remove(key).apply()
-        else prefs.edit().putString(key, value.trim()).apply()
-    }
-
     fun putAll(values: Map<String, String>) {
         val edit = prefs.edit()
         values.forEach { (k, v) -> if (v.isBlank()) edit.remove(k) else edit.putString(k, v.trim()) }
         edit.apply()
     }
 
-    fun known(): Map<String, String> = KEYS.mapNotNull { k -> get(k)?.let { k to it } }.toMap()
-
-    fun clear() = prefs.edit().clear().apply()
-
     companion object {
-        /** Must match PROFILE_KEYS in backend/snapsort/schema.py. */
-        val KEYS = listOf(
-            "full_name", "email", "phone", "age", "location",
-            "organisation", "student_id", "dietary", "website",
-        )
-
+        /**
+         * The canonical profile keys. Must match PROFILE_KEYS in backend/snapsort/schema.py —
+         * the backend names which key answers each question and the phone supplies the value.
+         */
         val LABELS = mapOf(
             "full_name" to "Full name",
             "email" to "Email",

@@ -1,0 +1,7 @@
+[tool.pytest.ini_options]
+# `snapsort` lives at backend/snapsort, so pytest needs backend/ on sys.path. Without this,
+# running pytest from the repo root (as VS Code does) fails with ModuleNotFoundError.
+pythonpath = ["."]
+# Scope collection to tests/ so bare `pytest` never picks up backend/test.py, the interactive
+# harness, whose name matches pytest's default test*.py pattern and which opens a file dialog.
+testpaths = ["tests"]

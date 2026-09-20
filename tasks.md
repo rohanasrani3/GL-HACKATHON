@@ -6,7 +6,7 @@
 - Android only, Kotlin. Watcher = foreground service + `ContentObserver` (not WorkManager).
 - No on-device OCR. The phone uploads the image and the backend does triage + extraction in one model call.
 - Backend = FastAPI on the laptop. **Model = hosted via OpenRouter** (`google/gemma-4-26b-a4b-it`, fallback `google/gemini-2.5-flash-lite`). Local Ollama, Claude and mock remain selectable with `MODEL_PROVIDER`.
-- **Policy gate lives in the backend** so Android and iOS behave the same: each proposal carries `decision` = `auto_add` (confidence ≥ 0.8 and nothing unclear) or `ask` (0.5–0.8, or date/time uncertain). Below 0.5 is dropped.
+- **Policy gate lives in the backend** so Android and iOS behave the same: each proposal carries `decision` = `auto_add` (confidence ≥ 0.6) or `ask` (0.5–0.6). Below 0.5 is dropped. Signals like `no_time_all_day` reduce confidence rather than forcing an ask.
 - Calendar write: `auto_add` writes directly (Android CalendarContract / iOS EventKit), then notifies with **Undo**. `ask` waits for **Add**. Without calendar permission everything falls back to `ask` + the calendar app's editor.
 - iOS app is built by a coworker (with Codex) from [frontend.md](frontend.md).
 - Phone ↔ laptop over phone hotspot or Tailscale.
@@ -29,8 +29,8 @@ Legend: `[x]` done · `[~]` in progress · `[ ]` todo · `[!]` blocked / needs d
 - [x] Policy gate: `decision` (`auto_add`/`ask`) + stable proposal `id` on every proposal
 - [x] `POST /feedback` (ids + outcome only → `evals/results/feedback.jsonl`); `/health` returns thresholds + `api_version`
 - [x] `MODEL_PROVIDER=mock`: canned auto_add / ask / skip cycle so frontends can be built without a model
-- [x] Unit + API tests: 21/21 passing
-- [x] **Latency fixed:** switched default to `gemma4:e2b-it-qat` → **5–9 s per screenshot** (was 34–77 s with gemma4:12b). Fallbacks if needed: `OLLAMA_MODEL=gemma4:12b` (slower, same accuracy on evals) or `MODEL_PROVIDER=claude`.
+- [x] Unit + API tests: **121 passing** (`cd backend && pytest`)
+- [x] **Latency fixed:** default is now hosted OpenRouter `google/gemma-4-26b-a4b-it` → **~9 s median**. Local fallback: `MODEL_PROVIDER=ollama` with a **vision** model (`gemma4:12b`); `MODEL_PROVIDER=claude` also works.
 - [x] Ollama client retries once on 5xx (model-loading race on first request)
 
 ## Phase 2: Evals (`/evals`)
@@ -38,6 +38,7 @@ Legend: `[x]` done · `[~]` in progress · `[ ]` todo · `[!]` blocked / needs d
 - [x] `run.py`: scores each against `expected/*.json`
 - [x] gemma4:12b: **5/5 correct**, median 72 s
 - [x] gemma4:e2b-it-qat: **5/5 correct**, median 8.8 s ← current default
+- [x] Form evals: `synthetic_form_poster` (QR → Google Form) and `synthetic_generic_form` (QR → plain `<form>`) now have expected JSON; `run.py` scores `forms` as well as `proposals`
 - [ ] Team: add 15 real screenshots to `evals/screenshots/real/` + expected JSON
 
 ## Phase 3: Android (`/android`)
@@ -47,8 +48,8 @@ Legend: `[x]` done · `[~]` in progress · `[ ]` todo · `[!]` blocked / needs d
 - [x] `Notifier`: "Reading your screenshot…" progress; **ADDED** ("✅ Added…" + Undo/Open) and **ASK** ("Add…?" + Add/Edit/Dismiss)
 - [x] `CalendarWriter`: direct insert into the primary calendar + delete for Undo
 - [x] `ActionReceiver`: Add / Undo / Dismiss buttons + `/feedback` (no activity trampolines, Android 12+ safe)
-- [x] `MainActivity`: server URL, test connection, start/stop, pick-from-gallery test, share-to-later.exe, activity log
-- [ ] **Build + install on a real phone in Android Studio** (not compiled yet; no SDK on this laptop)
+- [x] `MainActivity`: Compose Home (live activity feed) + Settings sheet behind ⋯ — server URL, test connection, start/stop, pick-from-gallery, share-to-later.exe, activity log
+- [x] **Build + install on a real phone** (OnePlus Nord CE). `./gradlew assembleDebug` builds; end-to-end verified over `adb reverse`.
 
 ## Phase 3b: iOS (`/ios`, coworker + Codex)
 - [x] Spec written: [frontend.md](frontend.md) (API contract, Swift models, decision logic, EventKit, notifications, screens, acceptance checklist)
@@ -79,7 +80,7 @@ cd backend
 ```bash
 "$LOCALAPPDATA/Android/Sdk/platform-tools/adb.exe" reverse tcp:8000 tcp:8000
 ```
-Server URL in the app: **`http://127.0.0.1:8000`** (the default). Re-run the `adb reverse` command after every re-plug/restart.
+The app's **default** server URL is the deployed Render backend, so it works with no laptop. For a laptop backend, set it to **`http://127.0.0.1:8000`** in Settings and re-run `adb reverse` after every re-plug/restart.
 - Why not Wi-Fi? Campus Wi-Fi may isolate devices, and the laptop's VPN (ProTUN, `10.2.0.2`) is **not** reachable from the phone. Wi-Fi fallback: `http://<Wi-Fi IPv4 from ipconfig>:8000`, with firewall rule "later.exe 8000" (already added).
 - Debug the app's saved settings/log: `adb shell run-as com.snapsort.app cat shared_prefs/snapsort.xml`
 
@@ -98,3 +99,6 @@ Server URL in the app: **`http://127.0.0.1:8000`** (the default). Re-run the `ad
 - OpenRouter live: **7/7 evals pass, median ~9 s** (gemma-4-26b via SiliconFlow). Real CEDARS page now gives BOTH events: programme 12–16 Oct (all-day, auto_add) + deadline 20 Sep (ask). Fixed: schema cleaner was deleting the event's `title` field; eval scorer now matches title+date. API key moved from config.py to backend/.env (git-ignored). **Rotate that key**, it was exposed in chat.
 - Backend deployed to **Render: https://gl-hackathon.onrender.com** (6/7 live, median 5.8 s). Fixed: end *time* in end-date field made single-day events 2-day (University Drive regression); messy date headers now parse. Added `GET /auth/check`. 51 tests.
 - Teammate's Compose Home is sample-data only and had dropped URL/token/watcher controls, so added a **Settings sheet behind Home's ⋯ button** (server URL, API token, Save & test [health + token check], start/stop watching with permissions, check gallery image). Default server URL = Render. `./gradlew assembleDebug` builds ✅. **Next:** wire Home to real activity data; set API_TOKEN on Render; push.
+- **Cleanup pass.** Removed verified-dead code (`resolve_google_form` — an unreferenced fetcher with no SSRF guards; `looks_like_form`; `Store.updateActivity`; `Profile.known/clear/set`; `HomeScreen.onItemClick`; `Proposal.confidence`, which was parsed with `getDouble` and would have thrown if the key ever went missing). Each fetched link is now parsed **once** instead of twice (`formdetect.read_page`) — verified 8 → 4 BeautifulSoup parses for a 4-link screenshot with byte-identical output. Dropped the vendored `.agents/` skill collection (103 files, referenced by nothing) and the resolved `.scratch/` tickets. Added `backend/pyproject.toml` so bare `pytest` works and stops collecting the interactive `test.py`. Robolectric 4.14.1 → 4.16, which fixes the `Unsupported class file major version 69` failure on JDK 25 — **7 of 8 Android unit tests now pass**.
+- **Known failing test:** `ScreenshotRetryTest.failedScreenshotIsRetriedAfterWatcherRestartWithOriginalCaptureTime`. Pre-existing — it fails identically at commit `0f48e14` with the same Robolectric version, so the cleanup did not cause it. It is the only test that drives the real service through `Dispatchers.IO`, and Robolectric is not thread-safe, so the retry never reaches MockWebServer within 5 s. The retry logic itself *is* covered, on the test thread, by `retryAfterPartialSuccessDoesNotDuplicateCalendarEntries`, which passes. Fixing it properly means injecting a test dispatcher into `ScreenshotWatcherService` — a product change for a test-only reason, so it is being left as a decision rather than done quietly.
+- **Still open:** rotate the OpenRouter key (see the note above); `AUTO_ADD_THRESHOLD` is 0.6 in code but Render may still run older code — redeploy after pushing, since `zxing-cpp`, `beautifulsoup4` and the form/link modules need a rebuild there.

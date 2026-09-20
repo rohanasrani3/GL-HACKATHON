@@ -1,15 +1,13 @@
 """Form-fill skill: link detection, form parsing, profile mapping and the safety rules."""
 import io
 import json
-from urllib.parse import urlparse
-
 import pytest
 from PIL import Image
 
 from snapsort import pipeline
-from snapsort.forms import _extract_load_data, looks_like_form, parse_form_html, profile_key_for
+from snapsort.forms import _extract_load_data, _PROFILE_PATTERNS, parse_form_html, profile_key_for
 from snapsort.links import FetchedPage
-from snapsort.schema import Extraction, FormPayload
+from snapsort.schema import PROFILE_KEYS, Extraction
 
 
 def _load_data(questions: list) -> str:
@@ -23,27 +21,12 @@ def _question(entry_id: int, title: str, qtype: int = 0, required: bool = False,
     return [1234, title, None, qtype, [[entry_id, opts, 1 if required else 0]]]
 
 
-# ---------- link detection ----------
-
-@pytest.mark.parametrize("url", [
-    "https://docs.google.com/forms/d/1abc/viewform",
-    "https://docs.google.com/forms/d/e/1FAIpQLS_x/viewform",
-    "https://forms.gle/abc123",
-    "forms.gle/abc123",
-])
-def test_form_links_are_recognised(url):
-    assert looks_like_form(url)
-
-
-@pytest.mark.parametrize("url", [
-    None, "", "https://example.com/register", "https://docs.google.com/document/d/1abc/edit",
-    "https://evil.com/docs.google.com/forms/d/1abc",  # host must actually be Google
-])
-def test_non_form_links_are_rejected(url):
-    assert not looks_like_form(url)
-
-
 # ---------- profile mapping ----------
+
+def test_profile_patterns_cover_exactly_the_documented_keys():
+    """PROFILE_KEYS is the published contract (Android's Profile.kt mirrors it), but the keys are
+    actually produced here. Without this, the two can drift apart silently."""
+    assert {key for _, key in _PROFILE_PATTERNS} == set(PROFILE_KEYS)
 
 @pytest.mark.parametrize("question,key", [
     ("Name?", "full_name"),
@@ -124,28 +107,36 @@ class _Stub:
         return None
 
 
+# A page that really is a form, so these tests exercise the actual detector rather than a stub.
+_FORM_HTML = (
+    "<html><title>Registration</title><body><form method='get'>"
+    "<label for='n'>Full name</label><input id='n' name='name'>"
+    "<label for='e'>Email</label><input id='e' name='email' required>"
+    "</form></body></html>"
+)
+
+
 def _page(url: str, html: str = "<html><title>Signup</title></html>") -> FetchedPage:
-    return FetchedPage(url=url, html=html, content_type="text/html")
+    return FetchedPage(url=url, html=html)
 
 
-def _payload(url="https://docs.google.com/forms/d/e/X/viewform") -> FormPayload:
-    return FormPayload(form_url=url, title="Signup", domain=urlparse(url).netloc, fields=[])
+def _patch(monkeypatch, *, pages: dict):
+    """Fake the network and nothing else: `pages` maps url -> FetchedPage (missing = unreachable).
 
-
-def _patch(monkeypatch, *, pages: dict, form_for=None):
-    """Fake the network: `pages` maps url -> FetchedPage (missing url = unreachable)."""
+    Whether a page counts as a form is left to the real detector reading the real HTML, so these
+    tests fail if form detection breaks.
+    """
     async def fake_fetch(url, timeout=12.0):
         return pages.get(url)
 
     monkeypatch.setattr(pipeline, "fetch_page", fake_fetch)
-    monkeypatch.setattr(pipeline, "detect_form", form_for or (lambda page: None))
 
 
 @pytest.mark.anyio
 async def test_form_proposal_is_always_ask_never_auto(monkeypatch):
     """CLAUDE.md §4.6 / D8: a pre-filled form is one step from submitting, so it always confirms."""
     url = "https://forms.gle/abc"
-    _patch(monkeypatch, pages={url: _page(url)}, form_for=lambda page: _payload(page.url))
+    _patch(monkeypatch, pages={url: _page(url, _FORM_HTML)})
     result = await pipeline.analyze(_Stub(form_url=url), _png())
     assert len(result.forms) == 1
     assert result.forms[0].decision == "ask"
@@ -184,8 +175,7 @@ async def test_qr_link_beats_a_misread_url(monkeypatch):
     right = "https://docs.google.com/forms/d/RIGHT/viewform"
     wrong = "https://docs.google.com/forms/d/WR0NG/viewform"
     monkeypatch.setattr(pipeline, "qr_links", lambda _b: [right])
-    _patch(monkeypatch, pages={right: _page(right), wrong: _page(wrong)},
-           form_for=lambda page: _payload(page.url))
+    _patch(monkeypatch, pages={right: _page(right, _FORM_HTML), wrong: _page(wrong, _FORM_HTML)})
     result = await pipeline.analyze(_Stub(form_url=wrong), _png())
     assert result.forms[0].payload.form_url == right
     assert "source:qr" in result.forms[0].notes

@@ -22,19 +22,26 @@ That last rule matters most for safety, and it is what makes v3 (form autofill) 
 
 ## 2. Components
 
-### 2.1 Watcher (`app/watcher`)
+> **Target architecture vs the build.** The module paths in this section describe where each
+> concern *belongs* as later.exe grows. The hackathon build is flatter: everything server-side
+> lives in `backend/snapsort/*.py` and everything on-device in
+> `android/app/src/main/java/com/snapsort/app/`. Each heading below names the file that plays
+> that role today. Treat the boundaries as real and the directory names as aspirational.
+
+### 2.1 Watcher (`app/watcher` — today: `android/.../ScreenshotWatcherService.kt`)
 - Detects new screenshots via OS APIs (see README platform notes).
 - Emits `ScreenshotCaptured { asset_id, captured_at, device_tz, source_app? }`.
-- Stores a perceptual hash (pHash) for each image. Near-duplicate screenshots, such as the same poster captured twice, are collapsed before any model call.
+- **Planned:** store a perceptual hash (pHash) per image so near-duplicates, such as the same poster captured twice, are collapsed before any model call. *Not implemented.* Today dedup is downstream and narrower: identical proposals share a stable id, and `Store.handledEventId` stops the same proposal being written twice.
 - Keeps a local cursor so it can catch up after the app is killed, without processing anything twice.
 
-### 2.2 Triage (`agent/triage`)
+### 2.2 Triage (`agent/triage` — today: folded into the single model call in `pipeline.analyze`)
 - **Goal:** reject about 90% of screenshots cheaply.
 - Stage 1 runs on-device: OCR, then keyword and regex heuristics (dates, times, `@`, `₹/$/HK$`, "RSVP", "venue", QR detected).
 - Stage 2 uses a small, fast model (e.g. `claude-haiku-4-5-20251001`) and runs only when stage 1 is inconclusive. It returns `{ actionable: bool, domains: ["calendar"|"receipt"|"form"], confidence }`.
 - Non-actionable screenshots stop here and nothing leaves the device beyond stage 2 input.
+- **Not implemented.** There is no on-device stage: the phone uploads the image and `actionable`/`sensitive` come back from the same server-side call as the extraction, so the image has already left the device by then. This is the largest gap between this document and the build, and the one to close first if the privacy claim is to be literally true.
 
-### 2.3 Orchestrator (`agent/orchestrator`)
+### 2.3 Orchestrator (`agent/orchestrator` — today: `backend/snapsort/pipeline.py`)
 - Routes the screenshot to one or more skills based on `domains`. A single screenshot can hold both an event and a QR code.
 - Builds the **context bundle** each skill receives:
   - image (downscaled, EXIF stripped) plus OCR text
@@ -43,7 +50,7 @@ That last rule matters most for safety, and it is what makes v3 (form autofill) 
   - short-term memory: recent actions, for dedup and "same event, updated time"
 - Runs skills and collects `ProposedAction[]`.
 
-### 2.4 Skills (`skills/<name>`)
+### 2.4 Skills (`skills/<name>` — today: `backend/snapsort/skills/<name>/SKILL.md`)
 Each skill is a self-contained unit. See [skills.md](skills.md) for the contract. A skill consists of:
 - `SKILL.md`: the prompt/instructions, extraction schema and examples
 - `schema.json`: the output JSON schema, enforced with structured outputs or tool-use
@@ -52,7 +59,7 @@ Each skill is a self-contained unit. See [skills.md](skills.md) for the contract
 
 Skills **propose**; they do not **perform**.
 
-### 2.5 Policy gate (`agent/policy`)
+### 2.5 Policy gate (`agent/policy` — today: `pipeline.decide()` + the thresholds in `config.py`)
 Deterministic rules that turn a proposal into a decision:
 
 | Condition | Decision |
@@ -63,15 +70,16 @@ Deterministic rules that turn a proposal into a decision:
 | action is **irreversible** (payment, form submit, sending a message) | **Always confirm**, whatever the confidence or setting |
 | duplicate of an existing event | Drop, or propose an *update* if details changed |
 
-Thresholds are per skill and user-tunable. Defaults live in `agent/policy/defaults.yaml`.
+Thresholds are meant to be per skill and user-tunable. Today they are global and set by
+`AUTO_ADD_THRESHOLD` / `ASK_THRESHOLD` in `backend/.env` (defaults 0.6 / 0.5), read in `config.py`.
 
-### 2.6 Connectors (`connectors/*`)
+### 2.6 Connectors (`connectors/*` — today: `android/.../CalendarWriter.kt`, writing CalendarContract directly)
 Thin, typed adapters: `GoogleCalendar`, `AppleEventKit`, `MicrosoftGraph`, and later budgeting apps and a browser/form runner. Every write returns an `undo_token`. OAuth tokens are stored in the OS keystore, never in app storage or logs.
 
-### 2.7 Notifier (`app/notify`)
+### 2.7 Notifier (`app/notify` — today: `android/.../Notifier.kt` + `ActionReceiver.kt`)
 Actionable notifications (Confirm / Edit / Undo). The Edit screen opens a pre-filled form. User corrections are saved as **feedback events** for the eval set, with consent.
 
-### 2.8 Memory (`agent/memory`)
+### 2.8 Memory (`agent/memory` — today: `android/.../Store.kt` and `Profile.kt`, both SharedPreferences)
 - **Profile:** name, home city/timezone, default calendar, and later budget categories and form autofill data (encrypted and stored locally).
 - **Action log:** what was proposed, what was done and what the user changed. Used for dedup, undo and learning preferences (e.g. "always put university events in the 'HKU' calendar").
 - No raw screenshots are kept server-side after processing.
@@ -102,11 +110,11 @@ Actionable notifications (Confirm / Edit / Undo). The Edit screen opens a pre-fi
 
 ## 5. Conventions for contributors / coding agents
 
-- **Adding a skill:** copy `skills/_template/`, fill in `SKILL.md` and `schema.json`, add at least 30 labelled eval screenshots, then register the skill in `agent/orchestrator/registry.yaml`. Update [skills.md](skills.md).
+- **Adding a skill:** create `backend/snapsort/skills/<name>/SKILL.md`, add its fields to `schema.py`, add labelled screenshots under `evals/`, and add the name to `SKILL_PROMPT` in `pipeline.py`. (The `skills/_template/` + `registry.yaml` contract in [skills.md](skills.md) is the intended end state, not what exists.)
 - **Prompts live in `SKILL.md`**, not inline in code. Code loads them.
 - **Every schema field** is either required or explicitly nullable. Every output also carries `confidence` (0–1) and `evidence` (the text span or region that justified it).
 - **Dates:** ISO 8601 with explicit offset. Never emit naive datetimes past the skill boundary.
-- **Tests:** unit tests for policy and connectors. Evals for skills (`make eval SKILL=calendar-event`). A PR that changes a prompt must include before and after eval numbers.
+- **Tests:** `cd backend && pytest` (121 tests, no network). Evals: `cd backend && python ../evals/run.py` (needs a live model). A change that touches a prompt must include before and after eval numbers.
 - **No write side effects in tests.** Use connector fakes.
 - Keep skills independent. A skill must not import another skill.
 

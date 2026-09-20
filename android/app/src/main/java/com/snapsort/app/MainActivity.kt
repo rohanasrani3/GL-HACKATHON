@@ -216,17 +216,7 @@ class MainActivity : ComponentActivity() {
 
         val url = buildPrefillUrl(form, values)
         store.log("📝 Opened pre-filled form: ${form.domain} (${values.count { it.value.isNotBlank() }} answers)")
-        store.recordActivity(
-            ActivityRecord(
-                id = form.id,
-                title = form.title ?: "Registration form",
-                status = ActivityRecord.EXECUTED,
-                summary = "Pre-filled — submit it yourself",
-                eventTime = form.domain,
-                proposalJson = form.json,
-                kind = ActivityRecord.FORM_KIND,
-            ),
-        )
+        store.recordActivity(form.toActivity(ActivityRecord.EXECUTED, "Pre-filled — submit it yourself"))
         NotificationManagerCompat.from(this).cancel(form.notificationId)
         activeForm.value = null
         refresh()

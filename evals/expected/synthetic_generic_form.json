@@ -1,0 +1,20 @@
+{
+  "_note": "Not a Google Form: a plain POST <form> on an ordinary page. Covers tier 3 of formdetect, and prefill_style must be \"none\" because a POST form cannot take answers in its URL. max_fields catches radio/checkbox groups being emitted one field per option.",
+  "events": [
+    {
+      "title_contains": "Pizza Night",
+      "start": "2026-09-25T19:00",
+      "end": "2026-09-25T22:00",
+      "location_contains": "Common Room"
+    }
+  ],
+  "forms": [
+    {
+      "domain_contains": "httpbin.org",
+      "min_fields": 5,
+      "max_fields": 8,
+      "prefill_style": "none"
+    }
+  ],
+  "captured_at": "2026-09-19T14:00:00+08:00"
+}

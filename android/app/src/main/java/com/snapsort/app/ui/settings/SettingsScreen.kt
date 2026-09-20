@@ -28,7 +28,7 @@ import androidx.compose.ui.unit.dp
  * Everything the pre-Compose MainActivity exposed: backend address, token, watcher control,
  * a manual test path and the raw activity log.
  *
- * Home stays the demo surface; this is the screen you actually configure the app from.
+ * Home shows what the agent did; this is the screen you configure it from.
  */
 @Composable
 fun SettingsScreen(

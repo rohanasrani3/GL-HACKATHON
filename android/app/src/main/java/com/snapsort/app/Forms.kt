@@ -36,7 +36,6 @@ data class FormPrefill(
     val fields: List<FormField>,
     val json: String,
     val prefillStyle: String = PrefillStyle.NONE,
-    val provider: String = "generic",
     /** Why later.exe thinks this is a form, so the guess is never a black box. */
     val reasons: List<String> = emptyList(),
 ) {
@@ -71,12 +70,25 @@ data class FormPrefill(
                 fields = fields,
                 json = raw,
                 prefillStyle = pl.optString("prefill_style", PrefillStyle.NONE),
-                provider = pl.optString("provider", "generic"),
                 reasons = (0 until (reasonsArr?.length() ?: 0)).map { reasonsArr!!.getString(it) },
             )
         }
     }
 }
+
+/**
+ * Feed entry for this form. Mirrors [Proposal.toActivity] so both kinds of proposal reach Home
+ * the same way, and keeps the raw JSON so Review still works without another round-trip.
+ */
+fun FormPrefill.toActivity(status: String, summary: String) = ActivityRecord(
+    id = id,
+    title = title ?: "Registration form",
+    status = status,
+    summary = summary,
+    eventTime = domain,
+    proposalJson = json,
+    kind = ActivityRecord.FORM_KIND,
+)
 
 /**
  * Build the link that opens the form with answers already typed in.

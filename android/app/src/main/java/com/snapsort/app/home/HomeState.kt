@@ -10,8 +10,9 @@ import com.snapsort.app.Store
  * comes through here, so the feed always matches the notifications the pipeline posted.
  */
 
-private val CALENDAR = ToolDestination(label = "Google Calendar", symbol = "G")
-private val FORM = ToolDestination(label = "Google Forms", symbol = "≡")
+/** The two places later.exe can send you. Shared so previews show the real chips, not copies. */
+internal val CALENDAR = ToolDestination(label = "Google Calendar", symbol = "G")
+internal val FORM = ToolDestination(label = "Google Forms", symbol = "≡")
 
 /** Statuses that belong in the "needs input" section rather than the receipt list. */
 private const val ATTENTION = ActivityRecord.NEEDS_ATTENTION

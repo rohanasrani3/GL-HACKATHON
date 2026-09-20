@@ -52,8 +52,8 @@ data class ActivityRecord(
         const val FORM_KIND = "form"
 
         // Status values mirror com.snapsort.app.home.ActivityStatus, kept as plain strings so
-        // this storage layer stays free of UI types.
-        const val PROCESSING = "PROCESSING"
+        // this storage layer stays free of UI types. Note there is deliberately no PROCESSING:
+        // an in-flight analysis is transient state (Store.processingSince), never a stored record.
         const val EXECUTED = "EXECUTED"
         const val NEEDS_ATTENTION = "NEEDS_ATTENTION"
         const val UNDONE = "UNDONE"
@@ -93,7 +93,7 @@ class Store(context: Context) {
      * survives a restart so the watcher can be brought back up.
      */
     var watcherEnabled: Boolean
-        get() = prefs.getBoolean("watcher_enabled", prefs.getBoolean("watcher_running", false))
+        get() = prefs.getBoolean("watcher_enabled", false)
         set(v) = prefs.edit().putBoolean("watcher_enabled", v).apply()
 
     /** When the in-flight analysis started, or 0. Drives the "Reading screenshot" row. */
@@ -121,19 +121,6 @@ class Store(context: Context) {
         }
         prefs.edit().putString("activity", out.toString()).apply()
     }
-
-    fun updateActivity(id: String, status: String, summary: String? = null, eventId: Long? = null) =
-        synchronized(activityLock) {
-            val arr = JSONArray(prefs.getString("activity", "[]"))
-            for (i in 0 until arr.length()) {
-                val o = arr.getJSONObject(i)
-                if (o.getString("id") != id) continue
-                o.put("status", status)
-                if (summary != null) o.put("summary", summary)
-                if (eventId != null) o.put("eventId", eventId)
-            }
-            prefs.edit().putString("activity", arr.toString()).apply()
-        }
 
     fun activities(): List<ActivityRecord> = synchronized(activityLock) {
         val arr = JSONArray(prefs.getString("activity", "[]"))

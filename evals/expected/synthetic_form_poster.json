@@ -1,0 +1,20 @@
+{
+  "_note": "QR-only registration. The form id is 44 random characters, so this case fails if the QR decoder regresses and the pipeline falls back to OCR of the link.",
+  "events": [
+    {
+      "title_contains": "AI Builders",
+      "start": "2026-09-26T18:30",
+      "end": "2026-09-26T21:00",
+      "location_contains": "Innovation Hub"
+    }
+  ],
+  "forms": [
+    {
+      "domain_contains": "docs.google.com",
+      "min_fields": 5,
+      "max_fields": 9,
+      "prefill_style": "google_forms"
+    }
+  ],
+  "captured_at": "2026-09-19T14:00:00+08:00"
+}

@@ -12,6 +12,7 @@ Everything here works on already-fetched HTML (see links.py for the fetch rules)
 data, never instruction: nothing read here can change what later.exe does, only what it reports.
 """
 import re
+from dataclasses import dataclass
 from typing import Optional
 from urllib.parse import urlparse
 
@@ -25,6 +26,7 @@ from .schema import FormField, FormPayload
 KNOWN_PROVIDERS: dict[str, tuple[str, str]] = {
     "docs.google.com": ("google_forms", "google_forms"),
     "forms.gle": ("google_forms", "google_forms"),
+    "forms.google.com": ("google_forms", "google_forms"),
     "forms.office.com": ("microsoft_forms", "none"),
     "forms.microsoft.com": ("microsoft_forms", "none"),
     "typeform.com": ("typeform", "query"),
@@ -160,28 +162,45 @@ def _page_meta(soup: BeautifulSoup) -> tuple[Optional[str], Optional[str]]:
     return title, desc
 
 
-def page_meta(html: str) -> tuple[Optional[str], Optional[str]]:
-    return _page_meta(BeautifulSoup(html, "html.parser"))
+@dataclass
+class PageFacts:
+    """Everything later.exe needs from one fetched page."""
+    form: Optional[FormPayload]
+    title: Optional[str]
+    description: Optional[str]
+
+
+def read_page(page: FetchedPage) -> PageFacts:
+    """Parse the page **once** and answer both questions: what is it, and is it a form?
+
+    One entry point on purpose. Form detection and the title/description both need the parsed
+    document, and parsing every fetched page two or three times was by far the most expensive
+    thing this module did.
+    """
+    soup = BeautifulSoup(page.html, "html.parser")
+    title, description = _page_meta(soup)
+    return PageFacts(form=_detect_form(page, soup, title), title=title, description=description)
 
 
 def detect_form(page: FetchedPage) -> Optional[FormPayload]:
     """Return a FormPayload if this page is a form we can describe, else None."""
+    return read_page(page).form
+
+
+def _detect_form(page: FetchedPage, soup: BeautifulSoup, title: Optional[str]) -> Optional[FormPayload]:
     url = page.url
     provider, style = provider_for(url)
     reasons: list[str] = []
 
     # 1. Google Forms: exact field ids.
     if provider == "google_forms":
-        payload = parse_form_html(page.html, url)
+        payload = parse_form_html(page.html, url, title)
         if payload:
             payload.provider = "google_forms"
             payload.prefill_style = "google_forms"
             payload.reasons = ["google forms page", f"{len(payload.fields)} questions read from the form"]
             return payload
         reasons.append("google forms host, but the questions could not be read")
-
-    soup = BeautifulSoup(page.html, "html.parser")
-    title, _ = _page_meta(soup)
 
     # 2. Any real <form> on the page: use the one with the most usable inputs.
     best: list[FormField] = []

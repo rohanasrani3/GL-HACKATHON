@@ -220,14 +220,9 @@ class ScreenshotWatcherService : Service() {
                     Notifier.showForm(ctx, f, missing)
                     store.log("📝 Form found: ${f.domain} · ${f.fields.size} questions, $missing to fill")
                     store.recordActivity(
-                        ActivityRecord(
-                            id = f.id,
-                            title = f.title ?: "Registration form",
-                            status = ActivityRecord.NEEDS_ATTENTION,
-                            summary = if (missing > 0) "$missing answers needed" else "Ready to pre-fill",
-                            eventTime = f.domain,
-                            proposalJson = f.json,
-                            kind = ActivityRecord.FORM_KIND,
+                        f.toActivity(
+                            ActivityRecord.NEEDS_ATTENTION,
+                            if (missing > 0) "$missing answers needed" else "Ready to pre-fill",
                         ),
                     )
                 }

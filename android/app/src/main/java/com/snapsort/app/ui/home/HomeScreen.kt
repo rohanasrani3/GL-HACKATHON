@@ -3,7 +3,6 @@ package com.snapsort.app.ui.home
 import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
-import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
@@ -62,7 +61,6 @@ fun HomeScreen(
     onReview: (String) -> Unit,
     onOverflow: () -> Unit,
     modifier: Modifier = Modifier,
-    onItemClick: ((String) -> Unit)? = null,
 ) {
     Surface(
         modifier = modifier.fillMaxSize(),
@@ -102,11 +100,7 @@ fun HomeScreen(
                     Spacer(Modifier.height(10.dp))
                 }
                 items(state.needsAttention, key = { "attention-${it.id}" }) { item ->
-                    NeedsInputItem(
-                        item = item,
-                        onReview = { onReview(item.id) },
-                        onItemClick = onItemClick?.let { callback -> { callback(item.id) } },
-                    )
+                    NeedsInputItem(item = item, onReview = { onReview(item.id) })
                     Spacer(Modifier.height(12.dp))
                 }
             }
@@ -117,11 +111,7 @@ fun HomeScreen(
                     SectionHeader(title = "RECENT ACTIVITY", trailing = "TODAY")
                 }
                 items(state.recentActivity, key = { "recent-${it.id}" }) { item ->
-                    ActivityReceipt(
-                        item = item,
-                        onUndo = { onUndo(item.id) },
-                        onItemClick = onItemClick?.let { callback -> { callback(item.id) } },
-                    )
+                    ActivityReceipt(item = item, onUndo = { onUndo(item.id) })
                 }
             }
         }
@@ -349,7 +339,6 @@ private fun SectionHeader(title: String, trailing: String) {
 private fun NeedsInputItem(
     item: ActivityItem,
     onReview: () -> Unit,
-    onItemClick: (() -> Unit)?,
 ) {
     val shape = RoundedCornerShape(3.dp)
     Column(
@@ -359,10 +348,6 @@ private fun NeedsInputItem(
             .clip(shape)
             .border(1.dp, MaterialTheme.colorScheme.outline, shape)
             .background(MaterialTheme.colorScheme.surface)
-            .then(
-                if (onItemClick != null) Modifier.clickable(role = Role.Button, onClick = onItemClick)
-                else Modifier
-            )
             .padding(16.dp),
     ) {
         Row(modifier = Modifier.fillMaxWidth()) {
@@ -426,16 +411,11 @@ private fun NeedsInputItem(
 private fun ActivityReceipt(
     item: ActivityItem,
     onUndo: () -> Unit,
-    onItemClick: (() -> Unit)?,
 ) {
     val presentation = activityStatusPresentation(item.status)
     Column(
         modifier = Modifier
             .fillMaxWidth()
-            .then(
-                if (onItemClick != null) Modifier.clickable(role = Role.Button, onClick = onItemClick)
-                else Modifier
-            )
             .padding(horizontal = HomeHorizontalPadding, vertical = 17.dp),
     ) {
         Row(modifier = Modifier.fillMaxWidth()) {

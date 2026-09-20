@@ -58,10 +58,19 @@ All endpoints are plain HTTP + JSON, except `/analyze`, which takes a multipart 
 Use this for the "Test connection" button and to read the policy thresholds (display only).
 
 ```json
-{ "ok": true, "api_version": 1, "model": "openrouter:google/gemma-4-26b-a4b-it", "auto_add_threshold": 0.8, "ask_threshold": 0.5 }
+{ "ok": true, "api_version": 1, "model": "openrouter:google/gemma-4-26b-a4b-it", "auto_add_threshold": 0.6, "ask_threshold": 0.5 }
 ```
 
 If `api_version != 1`, show a warning: "Backend version mismatch".
+
+The thresholds are **display only** - the backend has already applied them and sent you a
+`decision`. Do not re-implement the comparison.
+
+### 2.1b `GET /auth/check`
+
+Validates the API token without uploading an image. `204 No Content` if the token is accepted,
+`401` if not. Use it in Settings so "Test connection" can tell "server unreachable" apart from
+"wrong token" - `/health` is not token-protected, so it succeeds either way.
 
 ### 2.2 `POST /analyze`
 
@@ -97,12 +106,19 @@ If `api_version != 1`, show a warning: "Backend version mismatch".
       "notes": ["parser_and_model_agree"]
     }
   ],
+  "forms": [],
+  "links": [],
   "genre": "poster",
   "skipped_reason": null,
   "model": "openrouter:google/gemma-4-26b-a4b-it",
   "latency_ms": 8759
 }
 ```
+
+> **`forms` and `links` are newer than this spec and you can ignore them.** They carry the v3
+> form-prefill feature that ships on Android (see §13). Swift's `Codable` skips keys your struct
+> does not declare, so **your existing decoder keeps working unchanged** - you do not need to model
+> them. They are shown here only so the payload you see on the wire matches this document.
 
 Field rules:
 - `proposals` may be empty. Then `skipped_reason` is a short string (`"not_actionable"`, `"sensitive_content"`, `"meme"`, `"no_confident_future_events"`, …). Show it only in the Activity log, **never as a notification**.
@@ -457,7 +473,14 @@ Put all decision logic in `ProposalHandler` and keep it free of UIKit/SwiftUI so
 
 ## 13. Out of scope (don't build)
 
-Accounts or login, cloud sync, receipts/budget, forms/QR codes, editing the backend thresholds from the app, on-device OCR or ML, iPad-specific layouts, localisation beyond English.
+Accounts or login, cloud sync, receipts/budget, editing the backend thresholds from the app,
+on-device OCR or ML, iPad-specific layouts, localisation beyond English.
+
+**Form and QR prefill: deliberately deferred, not absent.** The backend already follows links and
+QR codes out of a screenshot, detects whether the destination is a form, reads its real fields and
+returns them in `forms` (§2.2), and Android ships the review-and-prefill screen. It is out of scope
+for **this** iOS spec purely to keep the first build small - ignore the `forms` and `links` keys and
+the app behaves exactly as described here. Pick it up after §14 passes.
 
 ---
 
@@ -489,4 +512,5 @@ Accounts or login, cloud sync, receipts/budget, forms/QR codes, editing the back
 | `auto_add` | Writes via CalendarContract → "✅ Added" + Undo/Open | Writes via EventKit → "✅ Added" + Undo/Open |
 | `ask` | "Add …?" + Add/Edit/Dismiss | Same |
 | No calendar permission | Falls back to ask + calendar screen | Same |
+| Form / QR prefill | Review screen, opens pre-filled, never submits | Not yet - see §13 |
 | Feedback | `POST /feedback`, `platform: android` | `POST /feedback`, `platform: ios` |

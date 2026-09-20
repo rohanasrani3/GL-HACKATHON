@@ -30,7 +30,8 @@ class Settings:
         m.strip() for m in os.getenv("OPENROUTER_FALLBACK_MODELS", "google/gemini-2.5-flash-lite").split(",") if m.strip()
     )
     ollama_url: str = os.getenv("OLLAMA_URL", "http://localhost:11434")
-    ollama_model: str = os.getenv("OLLAMA_MODEL", "qwen2.5:7b")
+    # Must be a vision model: a text-only one answers confidently about an image it cannot see.
+    ollama_model: str = os.getenv("OLLAMA_MODEL", "gemma4:12b")
     claude_model: str = os.getenv("CLAUDE_MODEL", "claude-opus-5")
     api_token: str = os.getenv("API_TOKEN", "")
     default_timezone: str = os.getenv("DEFAULT_TIMEZONE", "Asia/Hong_Kong")

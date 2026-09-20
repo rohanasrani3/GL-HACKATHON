@@ -12,7 +12,6 @@ import re
 from typing import Optional
 from urllib.parse import urlparse
 
-import httpx
 from PIL import Image
 
 from .schema import FormField, FormPayload
@@ -29,8 +28,6 @@ _TYPES = {
     9: "date",
     10: "time",
 }
-
-_FORM_HOSTS = ("docs.google.com", "forms.gle", "forms.google.com")
 
 # Question text -> canonical profile key. First match wins, so order matters:
 # "student id" must beat the bare "name"/"id" patterns.
@@ -69,16 +66,6 @@ def qr_urls(image: "Image.Image") -> list[str]:
         if text.lower().startswith(("http://", "https://")):
             out.append(text)
     return out
-
-
-def looks_like_form(url: Optional[str]) -> bool:
-    """Cheap check before spending a network round-trip."""
-    if not url:
-        return False
-    host = urlparse(url if "://" in url else f"https://{url}").netloc.lower()
-    if not any(host == h or host.endswith(f".{h}") for h in _FORM_HOSTS):
-        return False
-    return "forms.gle" in host or "/forms/" in url
 
 
 def profile_key_for(question: str) -> Optional[str]:
@@ -123,13 +110,12 @@ def _extract_load_data(html: str) -> Optional[list]:
     return None
 
 
-def _title(html: str) -> Optional[str]:
-    m = re.search(r"<title[^>]*>(.*?)</title>", html, re.S | re.I)
-    return m.group(1).strip() if m else None
+def parse_form_html(html: str, final_url: str, title: Optional[str] = None) -> Optional[FormPayload]:
+    """Build a FormPayload from a fetched Google Form page. Returns None if it isn't one.
 
-
-def parse_form_html(html: str, final_url: str) -> Optional[FormPayload]:
-    """Build a FormPayload from a fetched Google Form page. Returns None if it isn't one."""
+    `title` comes from the caller because formdetect has already parsed the page to get it —
+    re-reading it here would mean scanning the same HTML a second time for one string.
+    """
     data = _extract_load_data(html)
     if not data or len(data) < 2 or not data[1]:
         return None
@@ -160,21 +146,7 @@ def parse_form_html(html: str, final_url: str) -> Optional[FormPayload]:
         return None
     return FormPayload(
         form_url=final_url,
-        title=_title(html),
+        title=title,
         domain=urlparse(final_url).netloc,
         fields=fields,
     )
-
-
-async def resolve_google_form(url: str, timeout: float = 15.0) -> Optional[FormPayload]:
-    """Follow the link (forms.gle shorteners and /d/<id> both redirect to the public /d/e/<id>)."""
-    if not url.startswith("http"):
-        url = f"https://{url}"
-    try:
-        async with httpx.AsyncClient(timeout=timeout, follow_redirects=True) as client:
-            r = await client.get(url, headers={"User-Agent": "Mozilla/5.0 (later.exe)"})
-        if r.status_code != 200:
-            return None
-        return parse_form_html(r.text, str(r.url))
-    except (httpx.HTTPError, json.JSONDecodeError, ValueError):
-        return None

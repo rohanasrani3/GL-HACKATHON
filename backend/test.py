@@ -71,11 +71,16 @@ def main() -> None:
     print("\n=== Final result (what the phone gets) ===")
     print(result.model_dump_json(indent=2))
     print("\n=== Summary ===")
-    if result.proposals:
-        for p in result.proposals:
-            pl = p.payload
-            print(f"  + {pl.title} | {pl.start} -> {pl.end} | {pl.location.name or '-'} | confidence {p.confidence}")
-    else:
+    for p in result.proposals:
+        pl = p.payload
+        print(f"  + {pl.title} | {pl.start} -> {pl.end} | {pl.location.name or '-'} | confidence {p.confidence} | {p.decision}")
+    for f in result.forms:
+        pl = f.payload
+        known = sum(1 for x in pl.fields if x.profile_key)
+        print(f"  form {pl.domain} | {len(pl.fields)} questions, {known} from your profile | prefill {pl.prefill_style}")
+    for c in result.links:
+        print(f"  link {c.domain} | is_form={c.is_form} | via {c.source} | {c.title or '-'}")
+    if not (result.proposals or result.forms):
         print(f"  (nothing to add: {result.skipped_reason})")
     print(f"  latency {result.latency_ms} ms")
 

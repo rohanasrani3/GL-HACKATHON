@@ -6,7 +6,7 @@ from snapsort.links import FetchedPage
 
 
 def page(html: str, url: str = "https://example.com/register") -> FetchedPage:
-    return FetchedPage(url=url, html=html, content_type="text/html")
+    return FetchedPage(url=url, html=html)
 
 
 REGISTER_FORM = """

@@ -28,7 +28,6 @@ data class Proposal(
     val location: String?,
     val onlineUrl: String?,
     val description: String?,
-    val confidence: Double,
     val json: String, // original JSON, passed through notification intents
 ) {
     val autoAdd get() = decision == "auto_add"
@@ -50,7 +49,6 @@ data class Proposal(
                 location = loc.optStringOrNull("name"),
                 onlineUrl = loc.optStringOrNull("online_url"),
                 description = pl.optStringOrNull("description"),
-                confidence = p.getDouble("confidence"),
                 json = raw,
             )
         }

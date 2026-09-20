@@ -2,11 +2,19 @@
 
 A **skill** is a self-contained capability the orchestrator can route a screenshot to. Each skill reads a screenshot and returns **proposed actions**. It never performs side effects itself (see [CLAUDE.md](CLAUDE.md) §2.5, the policy gate).
 
-This file defines the skill contract and then lists every skill: core/shared, v1 (calendar), and planned (receipts, forms).
+This file defines the skill contract and then lists every skill: core/shared, v1 (calendar), and planned (receipts). **Form autofill has since shipped** — §4.2 is updated to describe what was built.
 
 ---
 
 ## 1. The skill contract
+
+> **Status: target contract, only partly enforced.** The hackathon build has two skills,
+> `backend/snapsort/skills/calendar_event/` and `.../form_fill/`, and each contains **only
+> `SKILL.md`**. There is no `schema.json`, `manifest.yaml` or per-skill `evals/`: the output
+> schema is centralised in `backend/snapsort/schema.py` and enforced as a strict JSON schema by
+> the model client, and the eval set is shared in `evals/`. There is also no orchestrator that
+> routes between skills — `pipeline.py` concatenates both prompts into one model call. Read the
+> rest of this section as the shape to grow into, not a description of the tree.
 
 Every skill lives in `skills/<skill-name>/` and provides:
 
@@ -165,7 +173,7 @@ These are used by the pipeline itself or by multiple domain skills.
 **Proposes:** `calendar.create`, `calendar.update`
 **Reversible:** yes. The default autonomy is `suggest`, and the user can switch it to `auto`.
 
-**Eval set:** at least 200 labelled screenshots across genres, languages (English, Chinese, Hindi) and date formats. Target: ≥ 95% date/time exact match on proposals shown to users.
+**Eval set:** the target is at least 200 labelled screenshots across genres, languages (English, Chinese, Hindi) and date formats, at ≥ 95% date/time exact match on proposals shown to users. **Today there are 7** synthetic screenshots in `evals/screenshots/` plus two real ones kept out of git (`evals/screenshots/real/`, git-ignored because real screenshots carry personal data).
 
 ---
 
@@ -195,7 +203,23 @@ These are used by the pipeline itself or by multiple domain skills.
 **Guardrails:** never extract full card or account numbers, and keep only the last 4 digits. Budget entries are records, not payments. The agent **never initiates a payment or transfer**.
 **Connectors (planned):** Google Sheets, Notion, YNAB, a local CSV export.
 
-### 4.2 `form-autofill` (v3)
+### 4.2 `form-autofill` (v3) — **shipped**
+
+Implemented as `backend/snapsort/skills/form_fill/SKILL.md` plus deterministic code in `links.py`,
+`formdetect.py` and `forms.py`, with the review screen in `android/.../ui/form/FormScreen.kt`.
+What actually shipped differs from the plan below in two ways worth noting:
+
+- **No sandboxed browser.** A browser runner was the risky part. Instead the backend reads the
+  form's real field ids off the fetched page and the phone builds a prefill **URL**
+  (`?usp=pp_url&entry.N=value` for Google Forms, `?name=value` for other GET forms), then opens it
+  in the ordinary browser. Nothing is automated inside the page, so there is no automation to
+  escape and no way for it to submit.
+- **Detection is generic, not allowlisted.** Three tiers: Google Forms, ten known hosted builders,
+  or any page with a real `<form>`. The user is shown the resolved domain *and the reasons* the
+  page was judged to be a form.
+
+Every hard guardrail below is implemented. Sensitive fields are matched by pattern
+(`_SENSITIVE` in `formdetect.py`), never given a profile key, and never placed in the URL.
 
 **Triggers on:** posters or messages with a registration QR code or link ("Register here", Google Forms, Microsoft Forms, Typeform, event sign-ups).
 

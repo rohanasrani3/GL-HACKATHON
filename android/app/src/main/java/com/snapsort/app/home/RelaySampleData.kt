@@ -6,10 +6,7 @@ package com.snapsort.app.home
  * These values deliberately do not read production storage or platform services.
  */
 object RelaySampleData {
-    private val googleCalendar = ToolDestination(
-        label = "Google Calendar",
-        symbol = "G",
-    )
+    private val googleCalendar = CALENDAR   // the real chip, so previews can't drift from runtime
 
     private val activeAgent = AgentStatus(
         kind = AgentStatusKind.ACTIVE,
@@ -72,8 +69,6 @@ object RelaySampleData {
         needsAttention = listOf(assignmentNeedsInput),
         recentActivity = listOf(buildNight, orientationDay, longHealthcareEvent),
     )
-
-    val active = defaultState.copy(processingItem = null)
 
     val processing = defaultState.copy(
         agentStatus = AgentStatus(
