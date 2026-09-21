@@ -8,7 +8,7 @@
 - Backend = FastAPI on the laptop. **Model = hosted via OpenRouter** (`google/gemma-4-26b-a4b-it`, fallback `google/gemini-2.5-flash-lite`). Local Ollama, Claude and mock remain selectable with `MODEL_PROVIDER`.
 - **Policy gate lives in the backend** so Android and iOS behave the same: each proposal carries `decision` = `auto_add` (confidence ≥ 0.6) or `ask` (0.5–0.6). Below 0.5 is dropped. Signals like `no_time_all_day` reduce confidence rather than forcing an ask.
 - Calendar write: `auto_add` writes directly (Android CalendarContract / iOS EventKit), then notifies with **Undo**. `ask` waits for **Add**. Without calendar permission everything falls back to `ask` + the calendar app's editor.
-- iOS app is built by a coworker (with Codex) from [frontend.md](frontend.md).
+- iOS app: SwiftUI port of the Android app in `/ios`, spec in [frontend.md](frontend.md), built and tested in CI on a GitHub macOS runner.
 - Phone ↔ laptop over phone hotspot or Tailscale.
 
 Legend: `[x]` done · `[~]` in progress · `[ ]` todo · `[!]` blocked / needs decision
@@ -51,9 +51,11 @@ Legend: `[x]` done · `[~]` in progress · `[ ]` todo · `[!]` blocked / needs d
 - [x] `MainActivity`: Compose Home (live activity feed) + Settings sheet behind ⋯ — server URL, test connection, start/stop, pick-from-gallery, share-to-later.exe, activity log
 - [x] **Build + install on a real phone** (OnePlus Nord CE). `./gradlew assembleDebug` builds; end-to-end verified over `adb reverse`.
 
-## Phase 3b: iOS (`/ios`, coworker + Codex)
-- [x] Spec written: [frontend.md](frontend.md) (API contract, Swift models, decision logic, EventKit, notifications, screens, acceptance checklist)
-- [ ] Build against `MODEL_PROVIDER=mock`, pass the frontend.md §14 checklist
+## Phase 3b: iOS (`/ios`)
+- [x] Spec written: [frontend.md](frontend.md) (API contract, Swift models, decision logic, EventKit, notifications, Relay screens, acceptance checklist)
+- [x] SwiftUI port of the Android app in `/ios`: Relay Home + Settings + Review sheet, EventKit auto-add/Undo, ASK/ADDED notifications, retry queue, background refresh, App Intents for Back Tap / share sheet ([ios/README.md](ios/README.md))
+- [~] CI on a GitHub macOS runner (`.github/workflows/ios.yml`): build, unit tests, screenshots, end-to-end vs `MODEL_PROVIDER=mock`
+- [ ] Manual checks on a real iPhone (frontend.md §14 items without 🤖): needs a Mac + Xcode to install
 - [ ] Point at the real backend
 
 ## Phase 4: Demo

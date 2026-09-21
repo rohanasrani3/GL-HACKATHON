@@ -1,0 +1,161 @@
+# Builds and runs the iOS app on a GitHub-hosted Mac (nobody on the team needs a Mac for this):
+#   1. unit tests
+#   2. screenshots of every Home state (demo data) + Settings
+#   3. end-to-end in the Simulator against the real backend in MODEL_PROVIDER=mock:
+#      upload → auto_add writes to Calendar, ask → confirm, skip, then Undo
+# Results (screenshots, self-test report, backend log) are uploaded as the "ios-run" artifact.
+name: iOS
+
+on:
+  push:
+    paths: ["ios/**", ".github/workflows/ios.yml", "backend/**"]
+  pull_request:
+    paths: ["ios/**", ".github/workflows/ios.yml", "backend/**"]
+  workflow_dispatch:
+
+jobs:
+  ios:
+    runs-on: macos-15
+    timeout-minutes: 45
+    env:
+      BUNDLE_ID: com.snapsort.ios
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install XcodeGen
+        run: brew install xcodegen
+
+      - name: Generate Xcode project
+        working-directory: ios
+        run: xcodegen generate
+
+      - name: Pick an iPhone simulator
+        run: |
+          UDID=$(xcrun simctl list devices available -j | python3 -c '
+          import json, re, sys
+          devices = json.load(sys.stdin)["devices"]
+          ios = sorted((k for k in devices if "iOS" in k), key=lambda k: [int(x) for x in re.findall(r"\d+", k)])
+          phones = [d for d in devices[ios[-1]] if d["name"].startswith("iPhone")]
+          pick = next((d for d in phones if d["name"] in ("iPhone 16 Pro", "iPhone 16")), phones[0])
+          print(pick["udid"])
+          print(ios[-1], pick["name"], file=sys.stderr)
+          ')
+          echo "UDID=$UDID" >> "$GITHUB_ENV"
+
+      - name: Build and run unit tests
+        run: |
+          set -o pipefail
+          xcodebuild test \
+            -project ios/Snapsort.xcodeproj -scheme Snapsort \
+            -destination "id=$UDID" -derivedDataPath build \
+            CODE_SIGNING_ALLOWED=NO 2>&1 | tee xcodebuild.log | grep -E "error:|warning: .*Snapsort|Test Case|Executed|BUILD|TEST" || true
+          grep -q "TEST SUCCEEDED" xcodebuild.log
+
+      # Unsigned build for a real iPhone. Sideloadly (Windows) signs it with your Apple ID when installing.
+      - name: Build iPhone .ipa (unsigned)
+        run: |
+          set -o pipefail
+          xcodebuild build \
+            -project ios/Snapsort.xcodeproj -scheme Snapsort -configuration Release \
+            -sdk iphoneos -destination "generic/platform=iOS" -derivedDataPath build-device \
+            CODE_SIGNING_ALLOWED=NO CODE_SIGNING_REQUIRED=NO CODE_SIGN_IDENTITY="" 2>&1 | tail -5
+          mkdir -p ipa/Payload
+          cp -R build-device/Build/Products/Release-iphoneos/Snapsort.app ipa/Payload/
+          (cd ipa && zip -qry ../Snapsort.ipa Payload)
+          ls -lh Snapsort.ipa
+
+      - name: Upload .ipa
+        uses: actions/upload-artifact@v4
+        with:
+          name: Snapsort-ipa
+          path: Snapsort.ipa
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Start backend (mock model)
+        run: |
+          cd backend
+          python -m pip install -q -r requirements.txt
+          MODEL_PROVIDER=mock nohup python -m uvicorn snapsort.main:app --host 127.0.0.1 --port 8000 > ../backend.log 2>&1 &
+          for i in $(seq 30); do curl -sf http://127.0.0.1:8000/health && break; sleep 1; done
+
+      - name: Boot simulator and install
+        run: |
+          xcrun simctl boot "$UDID" || true
+          xcrun simctl bootstatus "$UDID" -b
+          xcrun simctl install "$UDID" build/Build/Products/Debug-iphonesimulator/Snapsort.app
+          xcrun simctl privacy "$UDID" grant calendar "$BUNDLE_ID"
+          xcrun simctl privacy "$UDID" grant photos "$BUNDLE_ID"
+          xcrun simctl status_bar "$UDID" override --time 9:41 --batteryLevel 100 --cellularBars 4 || true
+          mkdir -p run
+
+      - name: Screenshot every Home state
+        run: |
+          for s in default active processing offline inactive noAttention multipleAttention longTitle; do
+            xcrun simctl launch --terminate-running-process "$UDID" "$BUNDLE_ID" -demoState "$s"
+            sleep 4
+            xcrun simctl io "$UDID" screenshot "run/home-$s.png"
+          done
+          xcrun simctl launch --terminate-running-process "$UDID" "$BUNDLE_ID" -demoScreen settings
+          sleep 4
+          xcrun simctl io "$UDID" screenshot run/settings.png
+          xcrun simctl launch --terminate-running-process "$UDID" "$BUNDLE_ID" -demoScreen form
+          sleep 4
+          xcrun simctl io "$UDID" screenshot run/form-review.png
+          xcrun simctl terminate "$UDID" "$BUNDLE_ID" || true
+
+      - name: End-to-end against the mock backend
+        run: |
+          # mock cycles: 1 → auto_add, 2 → ask, 3 → skipped (meme)
+          xcrun simctl launch --terminate-running-process "$UDID" "$BUNDLE_ID" \
+            -serverURL http://127.0.0.1:8000 -selfTest analyze,analyze,analyze
+          sleep 20
+          xcrun simctl io "$UDID" screenshot run/e2e-1-after-analyze.png
+          DATA=$(xcrun simctl get_app_container "$UDID" "$BUNDLE_ID" data)
+          cp "$DATA/Documents/selftest.txt" run/selftest-1.txt
+
+          xcrun simctl launch --terminate-running-process "$UDID" "$BUNDLE_ID" \
+            -serverURL http://127.0.0.1:8000 -selfTest confirm,undo
+          sleep 10
+          xcrun simctl io "$UDID" screenshot run/e2e-2-after-confirm-undo.png
+          cp "$DATA/Documents/selftest.txt" run/selftest-2.txt
+
+          # Forms: the backend's FormProposal shape → Needs your input → pre-filled link
+          xcrun simctl launch --terminate-running-process "$UDID" "$BUNDLE_ID" -selfTest form
+          sleep 6
+          xcrun simctl io "$UDID" screenshot run/e2e-3-form-found.png
+          cp "$DATA/Documents/selftest.txt" run/selftest-3.txt
+          xcrun simctl launch --terminate-running-process "$UDID" "$BUNDLE_ID" -selfTest openForm
+          sleep 6
+          xcrun simctl io "$UDID" screenshot run/e2e-4-form-opened.png
+          cp "$DATA/Documents/selftest.txt" run/selftest-4.txt
+          cp "$DATA/Library/Application Support/snapsort-state.json" run/state.json
+
+          echo "--- self-test 1"; cat run/selftest-1.txt
+          echo "--- self-test 2"; cat run/selftest-2.txt
+          echo "--- self-test 3"; cat run/selftest-3.txt
+          echo "--- self-test 4"; cat run/selftest-4.txt
+          echo "--- feedback"; cat evals/results/feedback.jsonl || true
+
+          grep -q "Added Generative AI in Healthcare" run/selftest-1.txt
+          grep -q "Needs your OK: Dinner with Sam" run/selftest-1.txt
+          grep -q "Nothing to add (meme)" run/selftest-1.txt
+          grep -q "confirm: Dinner with Sam -> EXECUTED" run/selftest-2.txt
+          grep -q -- "-> UNDONE" run/selftest-2.txt
+          test "$(grep -c '"outcome"' evals/results/feedback.jsonl)" -ge 3
+          grep -q "form: Registration form found: HKU AI Talk" run/selftest-3.txt
+          grep -q -- "-> NEEDS_ATTENTION" run/selftest-3.txt
+          grep -q "openForm: https://docs.google.com/forms/d/e/1FAIpQLSf-example/viewform?usp=pp_url&entry.1001=Test%20User&entry.1002=test@example.com&entry.1004=Afternoon -> EXECUTED" run/selftest-4.txt
+          ! grep -q "A123456" run/selftest-4.txt   # the sensitive ID field never reaches the URL
+
+      - name: Upload results
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: ios-run
+          path: |
+            run/
+            backend.log
+            xcodebuild.log
